@@ -60,6 +60,10 @@ class ExecutionState:
     # 历史记录
     history: List[IterationRecord] = field(default_factory=list)
 
+    # Persona切换历史
+    persona_history: List[Dict[str, Any]] = field(default_factory=list)
+    current_persona: str = "default"
+
     # 错误信息
     error_count: int = 0
     last_error: Optional[str] = None
@@ -94,6 +98,24 @@ class ExecutionState:
             self.failed_iterations += 1
             self.error_count += 1
             self.last_error = error
+
+    def add_persona_switch(
+        self,
+        from_persona: str,
+        to_persona: str,
+        reason: Optional[str] = None
+    ):
+        """添加Persona切换记录"""
+        switch_record = {
+            "timestamp": datetime.now().isoformat(),
+            "iteration": self.current_iteration,
+            "from_persona": from_persona,
+            "to_persona": to_persona,
+            "reason": reason
+        }
+        self.persona_history.append(switch_record)
+        self.current_persona = to_persona
+        self.last_update = datetime.now().isoformat()
 
     def update_duration(self):
         """更新总执行时长"""
