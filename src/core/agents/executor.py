@@ -85,25 +85,31 @@ class ExecutorAgent:
         action_match = re.search(r"Action:\s*(.+)", text)
         input_match = re.search(r"Action Input:\s*(.+)", text, re.DOTALL)
         
-        if not action_match or not input_match:
+        if not action_match:
             return None, None
             
         action = action_match.group(1).strip()
+        
+        # If no input match, check if it's a tool that takes no args or if args are implicit
+        # But per ReAct format, Action Input is usually expected.
+        if not input_match:
+            # Try to find a JSON block anywhere in the text if Action Input pattern fails
+            # This handles cases where the model forgets "Action Input:" prefix but provides JSON
+            from src.utils.json_utils import extract_json
+            args = extract_json(text)
+            if args and isinstance(args, dict):
+                return action, args
+            return action, None
+            
         input_str = input_match.group(1).strip()
         
-        # Cleanup JSON string if it has markdown code blocks
-        if input_str.startswith("```json"):
-            input_str = input_str[7:]
-        if input_str.startswith("```"):
-            input_str = input_str[3:]
-        if input_str.endswith("```"):
-            input_str = input_str[:-3]
-            
-        try:
-            args = json.loads(input_str)
+        from src.utils.json_utils import extract_json
+        args = extract_json(input_str)
+        
+        if args is not None:
             return action, args
-        except json.JSONDecodeError:
-            logger.error(f"Failed to parse JSON args: {input_str}")
+        else:
+            logger.error(f"Failed to parse JSON args: {input_str[:200]}...")
             return action, None
 
     async def execute_task(self, task_description: str) -> str:

@@ -26,7 +26,8 @@ def web_search(query: str) -> str:
         
     api_key = os.environ.get("TAVILY_API_KEY")
     if not api_key:
-        return "Error: TAVILY_API_KEY environment variable not set."
+        # Check if it's in config.yaml via some other means, or just return error
+        return "Error: TAVILY_API_KEY environment variable not set. Please set it to use web search."
         
     try:
         client = TavilyClient(api_key=api_key)

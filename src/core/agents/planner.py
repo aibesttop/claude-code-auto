@@ -102,14 +102,12 @@ class PlannerAgent:
             return None
 
         try:
-            if "```json" in response_text:
-                json_str = response_text.split("```json")[1].split("```")[0]
-            elif "```" in response_text:
-                json_str = response_text.split("```")[1].split("```")[0]
-            else:
-                json_str = response_text
-
-            data = json.loads(json_str)
+            from src.utils.json_utils import extract_json
+            data = extract_json(response_text)
+            
+            if not data or not isinstance(data, dict):
+                logger.error(f"Planner failed to find valid JSON in response: {response_text[:200]}...")
+                return None
 
             self.plan.tasks = [Task(**t) for t in data.get("plan", [])]
 

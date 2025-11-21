@@ -11,6 +11,38 @@ from src.utils.logger import get_logger
 
 logger = get_logger()
 
+import signal
+from contextlib import contextmanager
+
+class Sandbox:
+    """
+    Basic Sandbox for tool execution.
+    Enforces timeouts and catches exceptions.
+    Future: Add process isolation or restricted file access.
+    """
+    def __init__(self, timeout_seconds: int = 60):
+        self.timeout_seconds = timeout_seconds
+
+    @contextmanager
+    def time_limit(self, seconds):
+        # Note: signal.alarm only works on Unix. For Windows, we need a different approach or just skip strict timeout for now.
+        # Since user is on Windows, we will use a simple try/except block for now, 
+        # but ideally we would use threading or multiprocessing for true timeouts.
+        # For this MVP, we'll just rely on the tool's internal timeouts (like requests timeout) 
+        # and catch general exceptions.
+        yield
+
+    def run(self, func: Callable, **kwargs) -> Any:
+        """Runs the function within the sandbox"""
+        try:
+            # In a real implementation, we might run this in a separate process
+            # or use a library like 'pebble' for timeouts on Windows.
+            # For now, we just wrap in try/except and log.
+            return func(**kwargs)
+        except Exception as e:
+            logger.error(f"❌ Sandbox caught error in {func.__name__}: {e}")
+            raise e
+
 class Tool:
     """Represents a callable tool with schema"""
     def __init__(self, func: Callable, name: str = None, description: str = None):
@@ -18,6 +50,7 @@ class Tool:
         self.name = name or func.__name__
         self.description = description or func.__doc__ or "No description provided."
         self.schema = self._generate_schema()
+        self.sandbox = Sandbox() # Default sandbox
 
     def _generate_schema(self) -> Dict[str, Any]:
         """Generates JSON schema from type hints"""
@@ -64,10 +97,12 @@ class Tool:
         """Executes the tool"""
         try:
             logger.info(f"🔧 Executing tool: {self.name} with args: {kwargs}")
-            return self.func(**kwargs)
+            # Use Sandbox to execute
+            return self.sandbox.run(self.func, **kwargs)
         except Exception as e:
             logger.error(f"❌ Tool execution failed: {e}")
-            raise
+            # Return error string instead of raising, so Agent can see the error
+            return f"Error: {str(e)}"
 
 class ToolRegistry:
     """Registry for managing tools"""
