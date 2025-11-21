@@ -5,7 +5,7 @@ Executes specific sub-tasks using the ReAct pattern.
 import json
 import re
 from typing import List, Dict, Any, Tuple
-from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions, AssistantMessage, TextBlock
+from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions, AssistantMessage, TextBlock, ResultMessage
 from logger import get_logger
 from core.tool_registry import registry
 from core.agents.persona import PersonaEngine
@@ -128,6 +128,8 @@ class ExecutorAgent:
                         for block in message.content:
                             if isinstance(block, TextBlock):
                                 response_text += block.text
+                    elif isinstance(message, ResultMessage):
+                        break
                 
                 logger.debug(f"Claude Response:\n{response_text}")
                 

@@ -2,7 +2,7 @@
 Researcher Agent: wraps web search + summarization.
 """
 from typing import Optional
-from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions, AssistantMessage, TextBlock
+from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions, AssistantMessage, TextBlock, ResultMessage
 from logger import get_logger
 from core.tools.search_tools import web_search
 
@@ -43,4 +43,6 @@ class ResearcherAgent:
                     for block in message.content:
                         if isinstance(block, TextBlock):
                             response_text += block.text
+                elif isinstance(message, ResultMessage):
+                    break
         return response_text.strip()

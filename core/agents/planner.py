@@ -5,7 +5,7 @@ Decomposes goals and manages the high-level plan.
 import json
 from typing import List, Dict, Optional
 from pydantic import BaseModel
-from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions, AssistantMessage, TextBlock
+from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions, AssistantMessage, TextBlock, ResultMessage
 from logger import get_logger
 
 logger = get_logger()
@@ -84,6 +84,8 @@ class PlannerAgent:
                     for block in message.content:
                         if isinstance(block, TextBlock):
                             response_text += block.text
+                elif isinstance(message, ResultMessage):
+                    break
                             
             # Parse JSON response
             try:

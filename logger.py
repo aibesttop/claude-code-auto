@@ -86,6 +86,12 @@ class WorkflowLogger:
             formatter = DetailedFormatter()
 
         if console_output:
+            # Configure stdout for UTF-8 encoding to support emojis on Windows
+            if hasattr(sys.stdout, 'reconfigure'):
+                try:
+                    sys.stdout.reconfigure(encoding='utf-8')
+                except Exception:
+                    pass  # Fallback if reconfigure fails
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setFormatter(formatter)
             self.logger.addHandler(console_handler)
