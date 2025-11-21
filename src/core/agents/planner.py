@@ -27,6 +27,9 @@ Instructions:
 4. Output the NEXT sub-task to be executed by the Executor.
 5. If all tasks are done, output "ALL DONE".
 
+CRITICAL: Your response MUST be ONLY a valid JSON object. Do NOT include any explanatory text before or after the JSON.
+Do NOT write "Here is the plan:" or "Looking at..." or any other text. Output ONLY the JSON object.
+
 Format your response as a JSON object:
 {{
     "plan": [

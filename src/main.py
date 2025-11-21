@@ -206,21 +206,70 @@ async def main(config_path: str = "config.yaml"):
         event_store.create_event(EventType.PLANNER_START, session_id=session_id, iteration=iteration)
         planner_start_time = time.time()
 
-        try:
-            next_task = await asyncio.wait_for(
-                planner.get_next_step(last_result),
-                timeout=iteration_timeout
-            )
-            planner_duration = time.time() - planner_start_time
-
-            logger.log_event("planner_complete", {"next_task": next_task}, session_id=session_id, iteration=iteration)
+        next_task = None
+        
+        # Explicit Initial Step Logic
+        if iteration == 1 and config.task.initial_prompt:
+            logger.info(f"🚀 Executing Initial Prompt (User-driven): {config.task.initial_prompt[:100]}...")
+            next_task = config.task.initial_prompt
+            planner_duration = 0
+            
+            # Create a dummy planner complete event for consistency
             event_store.create_event(
                 EventType.PLANNER_COMPLETE,
                 session_id=session_id,
                 iteration=iteration,
                 next_task=next_task,
-                duration=planner_duration
+                duration=0
             )
+        else:
+            try:
+                next_task = await asyncio.wait_for(
+                    planner.get_next_step(last_result),
+                    timeout=iteration_timeout
+                )
+                planner_duration = time.time() - planner_start_time
+
+                logger.log_event("planner_complete", {"next_task": next_task}, session_id=session_id, iteration=iteration)
+                event_store.create_event(
+                    EventType.PLANNER_COMPLETE,
+                    session_id=session_id,
+                    iteration=iteration,
+                    next_task=next_task,
+                    duration=planner_duration
+                )
+            except asyncio.TimeoutError:
+                logger.error("Planner timed out.")
+                event_store.create_event(EventType.PLANNER_ERROR, session_id=session_id, iteration=iteration, error="timeout")
+                state.add_iteration(
+                    decision={"error": "planner_timeout"},
+                    duration=iteration_timeout,
+                    success=False,
+                    error="planner_timeout"
+                )
+                state_manager.save()
+                continuous_errors += 1
+                if continuous_errors >= max_continuous_errors:
+                    state.status = WorkflowStatus.FAILED
+                    break
+                else:
+                    continue
+            except Exception as e:
+                logger.error(f"Planner failed: {e}")
+                event_store.create_event(EventType.PLANNER_ERROR, session_id=session_id, iteration=iteration, error=str(e))
+                state.add_iteration(
+                    decision={"error": "planner_exception"},
+                    duration=time.time() - iteration_start,
+                    success=False,
+                    error=str(e)
+                )
+                state_manager.save()
+                continuous_errors += 1
+                if continuous_errors >= max_continuous_errors:
+                    state.status = WorkflowStatus.FAILED
+                    break
+                else:
+                    continue
 
             # Persona recommendation based on task
             if next_task:
@@ -252,38 +301,6 @@ async def main(config_path: str = "config.yaml"):
                             to_persona=recommended_persona,
                             reason="auto_recommendation"
                         )
-        except asyncio.TimeoutError:
-            logger.error("Planner timed out.")
-            event_store.create_event(EventType.PLANNER_ERROR, session_id=session_id, iteration=iteration, error="timeout")
-            state.add_iteration(
-                decision={"error": "planner_timeout"},
-                duration=iteration_timeout,
-                success=False,
-                error="planner_timeout"
-            )
-            state_manager.save()
-            continuous_errors += 1
-            if continuous_errors >= max_continuous_errors:
-                state.status = WorkflowStatus.FAILED
-                break
-            else:
-                continue
-        except Exception as e:
-            logger.error(f"Planner failed: {e}")
-            event_store.create_event(EventType.PLANNER_ERROR, session_id=session_id, iteration=iteration, error=str(e))
-            state.add_iteration(
-                decision={"error": "planner_exception"},
-                duration=time.time() - iteration_start,
-                success=False,
-                error=str(e)
-            )
-            state_manager.save()
-            continuous_errors += 1
-            if continuous_errors >= max_continuous_errors:
-                state.status = WorkflowStatus.FAILED
-                break
-            else:
-                continue
 
         if not next_task:
             logger.info("🎉 Goal Achieved! System exiting.")
