@@ -2,9 +2,10 @@
 Researcher Agent: wraps web search + summarization.
 """
 from typing import Optional
-from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions, AssistantMessage, TextBlock, ResultMessage
+
 from logger import get_logger
 from core.tools.search_tools import web_search
+from core.agents.sdk_client import run_claude_prompt
 
 logger = get_logger()
 
@@ -15,11 +16,28 @@ Given a query, call web_search, then synthesize key findings with sources.
 If web_search fails, explain the failure.
 """
 
+
 class ResearcherAgent:
-    def __init__(self, work_dir: str, provider: str = "tavily", enabled: bool = True):
+    def __init__(
+        self,
+        work_dir: str,
+        provider: str = "tavily",
+        enabled: bool = True,
+        *,
+        model: Optional[str] = None,
+        timeout_seconds: int = 300,
+        permission_mode: str = "bypassPermissions",
+        max_retries: int = 3,
+        retry_delay: float = 2.0,
+    ):
         self.work_dir = work_dir
         self.provider = provider
         self.enabled = enabled
+        self.model = model
+        self.timeout_seconds = timeout_seconds
+        self.permission_mode = permission_mode
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
 
     async def research(self, query: str) -> str:
         if not self.enabled:
@@ -28,21 +46,19 @@ class ResearcherAgent:
         logger.info(f"🔎 Researcher query: {query}")
         search_result = web_search(query)
 
-        options = ClaudeCodeOptions(
-            permission_mode="bypassPermissions",
-            cwd=self.work_dir
-        )
-
         prompt = f"{RESEARCH_SYSTEM_PROMPT}\n\nQuery: {query}\nSearch Result:\n{search_result}"
 
-        async with ClaudeSDKClient(options) as client:
-            await client.query(prompt)
-            response_text = ""
-            async for message in client.receive_response():
-                if isinstance(message, AssistantMessage):
-                    for block in message.content:
-                        if isinstance(block, TextBlock):
-                            response_text += block.text
-                elif isinstance(message, ResultMessage):
-                    break
-        return response_text.strip()
+        try:
+            response_text, _ = await run_claude_prompt(
+                prompt,
+                self.work_dir,
+                model=self.model,
+                permission_mode=self.permission_mode,
+                timeout=self.timeout_seconds,
+                max_retries=self.max_retries,
+                retry_delay=self.retry_delay,
+            )
+            return response_text.strip()
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error(f"Researcher failed to summarize search results: {exc}")
+            return f"Research error: {exc}"

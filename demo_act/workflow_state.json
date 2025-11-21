@@ -2,12 +2,12 @@
   "session_id": "aadf626d-4d2d-4a07-b295-423360629d4a",
   "goal": "计算出1+1的结果",
   "work_dir": "demo_act",
-  "status": "running",
+  "status": "completed",
   "current_iteration": 1,
   "max_iterations": 50,
   "start_time": "2025-11-21T18:39:45.053273",
   "last_update": "2025-11-21T19:06:21.895758",
-  "total_duration_seconds": 1596.842485,
+  "total_duration_seconds": 11455.279233,
   "history": [
     {
       "iteration": 1,

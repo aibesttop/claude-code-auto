@@ -16,42 +16,30 @@ from logger import setup_logger
 from core.agents.planner import PlannerAgent
 from core.agents.executor import ExecutorAgent
 from core.agents.researcher import ResearcherAgent
+from core.agents.sdk_client import run_claude_prompt
 # Import tools to register them
 import core.tools
 from state_manager import StateManager, WorkflowStatus
 
 
-async def _sdk_health_check(work_dir: Path, timeout: int, logger):
+async def _sdk_health_check(work_dir: Path, timeout: int, logger, model: str = None, permission_mode: str = "bypassPermissions"):
     """
     Perform a minimal SDK call to validate connectivity/auth before main loop.
     """
     try:
-        from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions, AssistantMessage, TextBlock
-    except ImportError:
-        logger.warning("Claude SDK not installed; skipping health check.")
-        return True
-
-    options = ClaudeCodeOptions(
-        permission_mode="bypassPermissions",
-        cwd=str(work_dir)
-    )
-    prompt = "Health check: respond with 'OK'"
-    try:
-        async with ClaudeSDKClient(options) as client:
-            await asyncio.wait_for(client.query(prompt), timeout=timeout)
-            response_text = ""
-            async for message in client.receive_response():
-                if isinstance(message, AssistantMessage):
-                    for block in message.content:
-                        if isinstance(block, TextBlock):
-                            response_text += block.text
-            if "OK" in response_text:
-                logger.info("SDK health check passed.")
-                return True
-            logger.error(f"SDK health check unexpected response: {response_text}")
-            return False
-    except asyncio.TimeoutError:
-        logger.error("SDK health check timed out.")
+        response_text, _ = await run_claude_prompt(
+            "Health check: respond with 'OK'",
+            str(work_dir),
+            model=model,
+            permission_mode=permission_mode,
+            timeout=timeout,
+            max_retries=2,
+            retry_delay=1.0,
+        )
+        if "OK" in response_text:
+            logger.info("SDK health check passed.")
+            return True
+        logger.error(f"SDK health check unexpected response: {response_text}")
         return False
     except Exception as e:
         logger.error(f"SDK health check failed: {e}")
@@ -93,7 +81,13 @@ async def main(config_path: str = "config.yaml"):
     work_dir.mkdir(parents=True, exist_ok=True)
 
     # SDK connectivity health check before creating agents
-    if not await _sdk_health_check(work_dir, timeout=config.claude.timeout_seconds, logger=logger):
+    if not await _sdk_health_check(
+        work_dir,
+        timeout=config.claude.timeout_seconds,
+        logger=logger,
+        model=config.claude.model,
+        permission_mode=config.claude.permission_mode,
+    ):
         logger.error("SDK health check failed. Verify network/API key and retry.")
         return
 
@@ -119,18 +113,33 @@ async def main(config_path: str = "config.yaml"):
     # 2. Initialize Agents
     planner = PlannerAgent(
         work_dir=str(work_dir),
-        goal=config.task.goal
+        goal=config.task.goal,
+        model=config.claude.model,
+        timeout_seconds=config.claude.timeout_seconds,
+        permission_mode=config.claude.permission_mode,
+        max_retries=config.error_handling.max_retries,
+        retry_delay=config.error_handling.retry_delay_seconds,
     )
 
     executor = ExecutorAgent(
         work_dir=str(work_dir),
-        persona_config=config.persona.model_dump()
+        persona_config=config.persona.model_dump(),
+        model=config.claude.model,
+        timeout_seconds=config.claude.timeout_seconds,
+        permission_mode=config.claude.permission_mode,
+        max_retries=config.error_handling.max_retries,
+        retry_delay=config.error_handling.retry_delay_seconds,
     )
 
     researcher = ResearcherAgent(
         work_dir=str(work_dir),
         provider=config.research.provider,
-        enabled=config.research.enabled
+        enabled=config.research.enabled,
+        model=config.claude.model,
+        timeout_seconds=config.claude.timeout_seconds,
+        permission_mode=config.claude.permission_mode,
+        max_retries=config.error_handling.max_retries,
+        retry_delay=config.error_handling.retry_delay_seconds,
     )
 
     # 3. Main Loop
