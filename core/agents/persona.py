@@ -2,8 +2,10 @@
 Dynamic Persona Engine
 Manages agent personas and role switching.
 """
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from pydantic import BaseModel
+from datetime import datetime
+import re
 
 class Persona(BaseModel):
     name: str
@@ -34,22 +36,47 @@ PERSONAS = {
     )
 }
 
+class PersonaSwitch(BaseModel):
+    """Persona切换记录"""
+    timestamp: datetime
+    from_persona: str
+    to_persona: str
+    reason: Optional[str] = None
+
 class PersonaEngine:
     def __init__(self, persona_config: dict = None):
         self.current_persona = PERSONAS["default"]
+        self.switch_history: List[PersonaSwitch] = []
         if persona_config:
             self._load_config(persona_config)
-        
+
     def get_persona(self, name: str) -> Optional[Persona]:
         return PERSONAS.get(name)
-        
-    def switch_persona(self, name: str) -> bool:
+
+    def get_current_persona_name(self) -> str:
+        """获取当前Persona名称"""
+        for name, persona in PERSONAS.items():
+            if persona == self.current_persona:
+                return name
+        return "default"
+
+    def switch_persona(self, name: str, reason: Optional[str] = None) -> bool:
         """Switches the current persona"""
         if name in PERSONAS:
+            old_name = self.get_current_persona_name()
             self.current_persona = PERSONAS[name]
+
+            # 记录切换历史
+            self.switch_history.append(PersonaSwitch(
+                timestamp=datetime.now(),
+                from_persona=old_name,
+                to_persona=name,
+                reason=reason
+            ))
+
             return True
         return False
-        
+
     def get_system_prompt(self) -> str:
         """Returns the current system prompt"""
         return self.current_persona.system_prompt
@@ -62,6 +89,62 @@ class PersonaEngine:
             system_prompt=system_prompt
         )
 
+    def recommend_persona(self, task: str) -> str:
+        """
+        基于任务内容推荐合适的Persona
+        使用关键词匹配和启发式规则
+        """
+        task_lower = task.lower()
+
+        # 关键词映射
+        keywords_map = {
+            "researcher": [
+                "search", "research", "find", "investigate", "look up",
+                "information", "data", "study", "analyze", "survey",
+                "搜索", "研究", "查找", "调查", "信息", "数据", "分析"
+            ],
+            "coder": [
+                "code", "program", "implement", "debug", "fix", "develop",
+                "write", "function", "class", "test", "refactor", "bug",
+                "编程", "代码", "实现", "修复", "开发", "函数", "测试", "重构"
+            ],
+            "product_manager": [
+                "prioritize", "requirement", "feature", "user story", "backlog",
+                "roadmap", "planning", "scope", "stakeholder", "value",
+                "优先级", "需求", "功能", "用户故事", "规划", "价值"
+            ]
+        }
+
+        # 计算每个persona的匹配分数
+        scores = {}
+        for persona_name, keywords in keywords_map.items():
+            score = sum(1 for keyword in keywords if keyword in task_lower)
+            scores[persona_name] = score
+
+        # 返回得分最高的persona
+        if max(scores.values()) > 0:
+            recommended = max(scores, key=scores.get)
+            return recommended
+
+        # 如果没有明显匹配，返回default
+        return "default"
+
+    def get_switch_history(self) -> List[Dict]:
+        """获取Persona切换历史"""
+        return [
+            {
+                "timestamp": switch.timestamp.isoformat(),
+                "from": switch.from_persona,
+                "to": switch.to_persona,
+                "reason": switch.reason
+            }
+            for switch in self.switch_history
+        ]
+
+    def list_available_personas(self) -> Dict[str, str]:
+        """列出所有可用的Personas"""
+        return {name: persona.description for name, persona in PERSONAS.items()}
+
     def _load_config(self, persona_config: dict):
         """Load personas from config dict (with default selection)."""
         personas = persona_config.get("personas", {}) if persona_config else {}
@@ -71,4 +154,4 @@ class PersonaEngine:
             self.register_persona(name, desc, prompt)
         default_name = persona_config.get("default_persona") if persona_config else None
         if default_name:
-            self.switch_persona(default_name)
+            self.switch_persona(default_name, reason="config_default")

@@ -1,6 +1,7 @@
 """
 Claude Code Auto v3.0 - Orchestrator
 ReAct-based Autonomous Agent with safety/state management.
+增强版：集成Persona推荐、事件流、成本追踪
 """
 import asyncio
 import sys
@@ -20,6 +21,8 @@ from core.agents.sdk_client import run_claude_prompt
 # Import tools to register them
 import core.tools
 from state_manager import StateManager, WorkflowStatus
+# Import event and cost tracking
+from core.events import EventStore, EventType, CostTracker, TokenUsage
 
 
 async def _sdk_health_check(work_dir: Path, timeout: int, logger, model: str = None, permission_mode: str = "bypassPermissions"):
@@ -73,12 +76,17 @@ async def main(config_path: str = "config.yaml"):
         console_output=True
     )
 
-    logger.info("🚀 Starting Claude Code Auto v3.0 (ReAct Engine)")
+    logger.info("🚀 Starting Claude Code Auto v3.0 Enhanced (ReAct Engine with Persona, Events, Cost Tracking)")
     logger.info(f"Goal: {config.task.goal}")
 
     # Ensure work directory exists
     work_dir = Path(config.directories.work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
+
+    # Initialize event store and cost tracker
+    event_store = EventStore(storage_dir=str(Path(config.directories.logs_dir) / "events"))
+    cost_tracker = CostTracker()
+    logger.info("📊 Event store and cost tracker initialized")
 
     # SDK connectivity health check before creating agents
     if not await _sdk_health_check(
@@ -110,6 +118,14 @@ async def main(config_path: str = "config.yaml"):
     state.status = WorkflowStatus.RUNNING
     state_manager.save()
 
+    # Log session start event
+    event_store.create_event(
+        EventType.SESSION_START,
+        session_id=session_id,
+        goal=config.task.goal,
+        max_iterations=config.safety.max_iterations
+    )
+
     # 2. Initialize Agents
     planner = PlannerAgent(
         work_dir=str(work_dir),
@@ -135,6 +151,8 @@ async def main(config_path: str = "config.yaml"):
         work_dir=str(work_dir),
         provider=config.research.provider,
         enabled=config.research.enabled,
+        enable_cache=True,  # Enable research cache
+        cache_ttl_minutes=60,
         model=config.claude.model,
         timeout_seconds=config.claude.timeout_seconds,
         permission_mode=config.claude.permission_mode,
@@ -159,6 +177,13 @@ async def main(config_path: str = "config.yaml"):
         logger.info(f"\n🔄 Global Iteration {iteration}/{max_iterations}")
         logger.log_event("iteration_start", {"iteration": iteration}, session_id=session_id, iteration=iteration)
 
+        # Event: iteration start
+        event_store.create_event(
+            EventType.ITERATION_START,
+            session_id=session_id,
+            iteration=iteration
+        )
+
         # Safety: emergency stop
         if emergency_stop_file.exists():
             logger.warning("🛑 Emergency stop detected.")
@@ -178,14 +203,58 @@ async def main(config_path: str = "config.yaml"):
 
         # --- Planning Phase ---
         logger.info("🤔 Phase 1: Planning")
+        event_store.create_event(EventType.PLANNER_START, session_id=session_id, iteration=iteration)
+        planner_start_time = time.time()
+
         try:
             next_task = await asyncio.wait_for(
                 planner.get_next_step(last_result),
                 timeout=iteration_timeout
             )
+            planner_duration = time.time() - planner_start_time
+
             logger.log_event("planner_complete", {"next_task": next_task}, session_id=session_id, iteration=iteration)
+            event_store.create_event(
+                EventType.PLANNER_COMPLETE,
+                session_id=session_id,
+                iteration=iteration,
+                next_task=next_task,
+                duration=planner_duration
+            )
+
+            # Persona recommendation based on task
+            if next_task:
+                recommended_persona = executor.persona_engine.recommend_persona(next_task)
+                current_persona = executor.persona_engine.get_current_persona_name()
+
+                if recommended_persona != current_persona:
+                    logger.info(f"🎭 Persona recommendation: {recommended_persona} (current: {current_persona})")
+                    event_store.create_event(
+                        EventType.PERSONA_RECOMMEND,
+                        session_id=session_id,
+                        iteration=iteration,
+                        recommended=recommended_persona,
+                        current=current_persona,
+                        task=next_task
+                    )
+
+                    # Auto-switch persona
+                    if executor.persona_engine.switch_persona(recommended_persona, reason=f"task_match: {next_task[:50]}"):
+                        logger.info(f"✨ Auto-switched to persona: {recommended_persona}")
+                        state.add_persona_switch(current_persona, recommended_persona, reason="auto_recommendation")
+                        state_manager.save()
+
+                        event_store.create_event(
+                            EventType.PERSONA_SWITCH,
+                            session_id=session_id,
+                            iteration=iteration,
+                            from_persona=current_persona,
+                            to_persona=recommended_persona,
+                            reason="auto_recommendation"
+                        )
         except asyncio.TimeoutError:
             logger.error("Planner timed out.")
+            event_store.create_event(EventType.PLANNER_ERROR, session_id=session_id, iteration=iteration, error="timeout")
             state.add_iteration(
                 decision={"error": "planner_timeout"},
                 duration=iteration_timeout,
@@ -201,6 +270,7 @@ async def main(config_path: str = "config.yaml"):
                 continue
         except Exception as e:
             logger.error(f"Planner failed: {e}")
+            event_store.create_event(EventType.PLANNER_ERROR, session_id=session_id, iteration=iteration, error=str(e))
             state.add_iteration(
                 decision={"error": "planner_exception"},
                 duration=time.time() - iteration_start,
@@ -225,13 +295,52 @@ async def main(config_path: str = "config.yaml"):
 
         # --- Execution Phase ---
         logger.info("⚙️ Phase 2: Execution")
+        event_store.create_event(EventType.EXECUTOR_START, session_id=session_id, iteration=iteration, task=next_task)
+        executor_start_time = time.time()
+
         try:
             result = await asyncio.wait_for(
                 executor.execute_task(next_task),
                 timeout=iteration_timeout
             )
+            executor_duration = time.time() - executor_start_time
             last_result = f"Task: {next_task}\nResult: {result}"
             logger.info(f"Execution Result: {result}")
+
+            # Event: executor complete
+            event_store.create_event(
+                EventType.EXECUTOR_COMPLETE,
+                session_id=session_id,
+                iteration=iteration,
+                task=next_task,
+                result=result[:200],  # Truncate for storage
+                duration=executor_duration
+            )
+
+            # Record cost (simplified: estimate tokens based on text length)
+            # In production, extract from SDK response
+            estimated_tokens = TokenUsage(
+                input_tokens=len(next_task) // 4,  # Rough estimate
+                output_tokens=len(result) // 4
+            )
+            cost_record = cost_tracker.record_cost(
+                session_id=session_id,
+                agent_type="executor",
+                model=config.claude.model or "claude-3-5-sonnet-20241022",
+                token_usage=estimated_tokens,
+                duration_seconds=executor_duration,
+                iteration=iteration
+            )
+
+            event_store.create_event(
+                EventType.COST_RECORDED,
+                session_id=session_id,
+                iteration=iteration,
+                agent="executor",
+                cost_usd=cost_record.estimated_cost_usd,
+                tokens=estimated_tokens.total_tokens
+            )
+
             iteration_duration = time.time() - iteration_start
             state.add_iteration(
                 decision={"task": next_task, "result": result},
@@ -239,10 +348,19 @@ async def main(config_path: str = "config.yaml"):
                 success=True
             )
             state_manager.save()
-            logger.log_cost(iteration, session_id, iteration_duration, cost=None)
+            logger.log_cost(iteration, session_id, iteration_duration, cost=cost_record.estimated_cost_usd)
             continuous_errors = 0
+
+            event_store.create_event(
+                EventType.ITERATION_END,
+                session_id=session_id,
+                iteration=iteration,
+                success=True,
+                duration=iteration_duration
+            )
         except asyncio.TimeoutError:
             logger.error("Executor timed out.")
+            event_store.create_event(EventType.EXECUTOR_ERROR, session_id=session_id, iteration=iteration, error="timeout")
             last_result = f"Task: {next_task}\nFailed: executor_timeout"
             iteration_duration = iteration_timeout
             state.add_iteration(
@@ -253,12 +371,15 @@ async def main(config_path: str = "config.yaml"):
             )
             state_manager.save()
             logger.log_cost(iteration, session_id, iteration_duration, cost=None)
+            event_store.create_event(EventType.ITERATION_END, session_id=session_id, iteration=iteration, success=False, duration=iteration_duration)
             continuous_errors += 1
             if continuous_errors >= max_continuous_errors:
                 state.status = WorkflowStatus.FAILED
+                event_store.create_event(EventType.MAX_RETRIES_EXCEEDED, session_id=session_id, iteration=iteration)
                 break
         except Exception as e:
             logger.error(f"Execution Failed: {e}")
+            event_store.create_event(EventType.EXECUTOR_ERROR, session_id=session_id, iteration=iteration, error=str(e))
             last_result = f"Task: {next_task}\nFailed: {str(e)}"
             iteration_duration = time.time() - iteration_start
             state.add_iteration(
@@ -269,15 +390,67 @@ async def main(config_path: str = "config.yaml"):
             )
             state_manager.save()
             logger.log_cost(iteration, session_id, iteration_duration, cost=None)
+            event_store.create_event(EventType.ITERATION_END, session_id=session_id, iteration=iteration, success=False, duration=iteration_duration)
             continuous_errors += 1
             if continuous_errors >= max_continuous_errors:
                 state.status = WorkflowStatus.FAILED
+                event_store.create_event(EventType.MAX_RETRIES_EXCEEDED, session_id=session_id, iteration=iteration)
                 break
 
     if iteration >= max_iterations:
         logger.warning("⚠️ Max iterations reached. Stopping.")
         state.status = WorkflowStatus.TIMEOUT
+        event_store.create_event(EventType.TIMEOUT, session_id=session_id)
+
+    # Session end
+    event_store.create_event(
+        EventType.SESSION_END,
+        session_id=session_id,
+        status=state.status.value,
+        iterations=iteration,
+        success_rate=state.get_success_rate()
+    )
+
+    # Save state and events
     state_manager.save()
+
+    # Generate and save reports
+    logger.info("\n" + "=" * 60)
+    logger.info("📊 Final Reports")
+    logger.info("=" * 60)
+
+    # Cost report
+    cost_report = cost_tracker.generate_report(session_id)
+    logger.info(f"💰 Total Cost: ${cost_report.get('total_cost_usd', 0):.4f}")
+    logger.info(f"📈 Total Tokens: {cost_report.get('total_tokens', {}).get('total_tokens', 0)}")
+    logger.info(f"🔧 Total API Calls: {cost_report.get('total_calls', 0)}")
+
+    # Event statistics
+    event_stats = event_store.get_event_statistics(session_id)
+    logger.info(f"📋 Total Events: {event_stats.get('total_events', 0)}")
+    logger.info(f"🔄 Iterations: {event_stats.get('iterations_count', 0)}")
+
+    # Persona history
+    if state.persona_history:
+        logger.info(f"🎭 Persona Switches: {len(state.persona_history)}")
+        for switch in state.persona_history:
+            logger.info(f"   {switch['from_persona']} → {switch['to_persona']} ({switch.get('reason', 'N/A')})")
+
+    # Researcher stats
+    if researcher.enabled:
+        research_stats = researcher.get_stats()
+        logger.info(f"🔬 Research Queries: {research_stats.get('total_queries', 0)}")
+        if 'cache_hit_rate' in research_stats:
+            logger.info(f"📦 Cache Hit Rate: {research_stats['cache_hit_rate']:.1%}")
+
+    # Save event log
+    try:
+        event_file = event_store.save_to_file(session_id)
+        logger.info(f"💾 Events saved to: {event_file}")
+    except Exception as e:
+        logger.error(f"Failed to save events: {e}")
+
+    logger.info("=" * 60 + "\n")
 
 
 if __name__ == "__main__":
