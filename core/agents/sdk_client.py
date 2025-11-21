@@ -30,6 +30,7 @@ async def run_claude_prompt(
     timeout: int = 300,
     max_retries: int = 3,
     retry_delay: float = 2.0,
+    debug_cli: bool = False,
 ) -> Tuple[str, Optional[ResultMessage]]:
     """
     Send a single prompt to Claude Code CLI with retries and timeout.
@@ -43,11 +44,12 @@ async def run_claude_prompt(
 
     for attempt in range(1, max_retries + 1):
         try:
+            extra_args = {"debug-to-stderr": None} if debug_cli else {}
             options = ClaudeCodeOptions(
                 permission_mode=permission_mode,
                 cwd=work_dir,
                 model=model,
-                extra_args={"debug-to-stderr": None},  # surface CLI errors
+                extra_args=extra_args,
             )
 
             response_text = ""
