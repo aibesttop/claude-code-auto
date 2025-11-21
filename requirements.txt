@@ -5,3 +5,8 @@ uvicorn[standard]>=0.24.0
 websockets>=12.0
 claude-code-sdk>=0.0.25
 tavily-python>=0.3.0
+
+# Phase 0 dependencies
+rich>=13.7.0         # Beautiful terminal output for budget monitor
+pytest>=7.4.0        # Unit testing framework
+pytest-asyncio>=0.21.0  # Async test support

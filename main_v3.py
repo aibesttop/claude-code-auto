@@ -23,6 +23,8 @@ import core.tools
 from state_manager import StateManager, WorkflowStatus
 # Import event and cost tracking
 from core.events import EventStore, EventType, CostTracker, TokenUsage
+# Import budget manager
+from core.budget_manager import BudgetManager
 
 
 async def _sdk_health_check(work_dir: Path, timeout: int, logger, model: str = None, permission_mode: str = "bypassPermissions"):
@@ -87,6 +89,17 @@ async def main(config_path: str = "config.yaml"):
     event_store = EventStore(storage_dir=str(Path(config.directories.logs_dir) / "events"))
     cost_tracker = CostTracker()
     logger.info("📊 Event store and cost tracker initialized")
+
+    # Initialize budget manager
+    budget_manager = BudgetManager(
+        daily_budget=config.budget.daily_budget,
+        weekly_budget=config.budget.weekly_budget,
+        monthly_budget=config.budget.monthly_budget,
+        agent_budget_ratios=config.budget.agent_ratios,
+        enable_auto_fallback=config.budget.enable_auto_fallback,
+        storage_dir=config.budget.storage_dir
+    )
+    logger.info(f"💰 Budget manager initialized: Daily=${config.budget.daily_budget:.2f}")
 
     # SDK connectivity health check before creating agents
     if not await _sdk_health_check(
@@ -298,6 +311,49 @@ async def main(config_path: str = "config.yaml"):
         event_store.create_event(EventType.EXECUTOR_START, session_id=session_id, iteration=iteration, task=next_task)
         executor_start_time = time.time()
 
+        # Budget check before execution
+        estimated_cost = budget_manager.estimate_cost_from_text(
+            input_text=next_task,
+            output_text="",  # Unknown before execution
+            model=config.claude.model
+        )
+        budget_check = await budget_manager.check_budget(
+            agent_type="executor",
+            operation="llm_call",
+            estimated_cost=estimated_cost * 5,  # Conservative estimate (include output)
+            model=config.claude.model
+        )
+
+        if not budget_check.allowed:
+            logger.error(f"🛑 预算检查失败: {budget_check.warning_message}")
+            event_store.create_event(
+                EventType.EXECUTOR_ERROR,
+                session_id=session_id,
+                iteration=iteration,
+                error="budget_exceeded",
+                budget_status=budget_manager.get_budget_status()
+            )
+            last_result = f"Task: {next_task}\nFailed: Budget exceeded"
+            state.add_iteration(
+                decision={"task": next_task, "error": "budget_exceeded"},
+                duration=time.time() - iteration_start,
+                success=False,
+                error="budget_exceeded"
+            )
+            state_manager.save()
+            continuous_errors += 1
+            if continuous_errors >= max_continuous_errors:
+                state.status = WorkflowStatus.FAILED
+                break
+            else:
+                continue
+
+        # Apply budget recommendations
+        actual_model = config.claude.model
+        if budget_check.recommended_model and budget_check.recommended_model != config.claude.model:
+            logger.info(f"💰 预算优化: 切换模型 {config.claude.model} -> {budget_check.recommended_model}")
+            actual_model = budget_check.recommended_model
+
         try:
             result = await asyncio.wait_for(
                 executor.execute_task(next_task),
@@ -330,6 +386,15 @@ async def main(config_path: str = "config.yaml"):
                 token_usage=estimated_tokens,
                 duration_seconds=executor_duration,
                 iteration=iteration
+            )
+
+            # Record budget usage
+            budget_manager.record_usage(
+                agent_type="executor",
+                operation="llm_call",
+                actual_cost=cost_record.estimated_cost_usd,
+                model=actual_model,
+                fallback_applied=(actual_model != config.claude.model)
             )
 
             event_store.create_event(
@@ -442,6 +507,18 @@ async def main(config_path: str = "config.yaml"):
         logger.info(f"🔬 Research Queries: {research_stats.get('total_queries', 0)}")
         if 'cache_hit_rate' in research_stats:
             logger.info(f"📦 Cache Hit Rate: {research_stats['cache_hit_rate']:.1%}")
+
+    # Budget report
+    budget_status = budget_manager.get_budget_status()
+    budget_report = budget_manager.generate_report()
+    logger.info(f"💰 Budget Status: {budget_status['status'].upper()}")
+    logger.info(f"💵 Budget Used: ${budget_status['current_usage']:.4f} / ${budget_status['budget_limit']:.2f} ({budget_status['usage_percentage']:.1f}%)")
+    logger.info(f"💸 Remaining: ${budget_status['remaining_budget']:.4f}")
+    if budget_report.get('fallback_count', 0) > 0:
+        logger.info(f"🔄 Fallback Applied: {budget_report['fallback_count']} times")
+    logger.info("Agent Budget Breakdown:")
+    for agent, usage in budget_status['agent_usage'].items():
+        logger.info(f"  {agent:12} ${usage:.4f}")
 
     # Save event log
     try:

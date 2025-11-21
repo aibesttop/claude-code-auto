@@ -88,6 +88,22 @@ class ResearchConfig(BaseModel):
     enabled: bool = Field(default=True, description="Enable research agent features")
 
 
+class BudgetConfig(BaseModel):
+    daily_budget: float = Field(default=10.0, ge=0.1, description="Daily budget in USD")
+    weekly_budget: float = Field(default=70.0, ge=0.1, description="Weekly budget in USD")
+    monthly_budget: float = Field(default=300.0, ge=0.1, description="Monthly budget in USD")
+    enable_auto_fallback: bool = Field(default=True, description="Enable automatic fallback to cheaper models")
+    storage_dir: str = Field(default="logs/budget", description="Budget data storage directory")
+    agent_ratios: Dict[str, float] = Field(
+        default_factory=lambda: {
+            "planner": 0.1,
+            "executor": 0.6,
+            "researcher": 0.3
+        },
+        description="Budget allocation ratios for each agent type"
+    )
+
+
 class WorkflowConfig(BaseModel):
     directories: DirectoriesConfig
     task: TaskConfig
@@ -101,6 +117,7 @@ class WorkflowConfig(BaseModel):
     persona: PersonaConfig = Field(default_factory=PersonaConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     research: ResearchConfig = Field(default_factory=ResearchConfig)
+    budget: BudgetConfig = Field(default_factory=BudgetConfig)
 
     @field_validator('directories')
     def validate_directories(cls, v):

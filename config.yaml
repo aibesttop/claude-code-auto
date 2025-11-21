@@ -82,3 +82,15 @@ observability:
 research:
   provider: "tavily"
   enabled: true
+
+# Budget management
+budget:
+  daily_budget: 10.0        # Daily budget in USD
+  weekly_budget: 70.0       # Weekly budget in USD
+  monthly_budget: 300.0     # Monthly budget in USD
+  enable_auto_fallback: true # Auto-switch to cheaper models when budget is low
+  storage_dir: "logs/budget"
+  agent_ratios:             # Budget allocation ratios
+    planner: 0.1            # 10% for planning
+    executor: 0.6           # 60% for execution
+    researcher: 0.3         # 30% for research
