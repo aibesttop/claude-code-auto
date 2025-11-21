@@ -6,6 +6,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import asyncio
@@ -18,7 +19,28 @@ from state_manager import StateManager, WorkflowStatus
 from logger import get_logger
 
 
-app = FastAPI(title="Claude Workflow Monitor", version="2.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理"""
+    # 启动时执行
+    print("Web 监控服务器启动")
+    print("访问 http://localhost:8000 查看监控面板")
+    
+    # 启动后台任务
+    broadcast_task = asyncio.create_task(broadcast_status_updates())
+    
+    yield
+    
+    # 关闭时执行
+    print("Web 监控服务器关闭")
+    broadcast_task.cancel()
+    try:
+        await broadcast_task
+    except asyncio.CancelledError:
+        pass
+
+
+app = FastAPI(title="Claude Workflow Monitor", version="2.0", lifespan=lifespan)
 
 # CORS 中间件
 app.add_middleware(
@@ -388,25 +410,11 @@ async def broadcast_status_updates():
                         "last_update": state.last_update
                     }
                 })
+        except asyncio.CancelledError:
+            break
         except Exception as e:
             # 忽略错误，继续运行
             pass
-
-
-@app.on_event("startup")
-async def startup_event():
-    """启动时执行"""
-    print("🚀 Web 监控服务器启动")
-    print("📊 访问 http://localhost:8000 查看监控面板")
-
-    # 启动后台任务
-    asyncio.create_task(broadcast_status_updates())
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """关闭时执行"""
-    print("👋 Web 监控服务器关闭")
 
 
 if __name__ == "__main__":
