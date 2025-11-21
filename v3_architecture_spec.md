@@ -155,3 +155,31 @@ def web_search(query: str) -> str:
 3.  **Phase 3: Self-Evolution (v3.2)**
     *   Implement **Tool Builder** (Code-writing-code).
     *   Implement **Sandbox** for safety.
+
+---
+
+## 7. Development Plan & Priorities (开发计划与优先级)
+
+**目标**：在现有 v3.0 ReAct 基础上，逐步落地 v3.1 “动态超级体”能力，同时沿用 v2 的安全/状态护栏。
+
+### P0（安全护栏 & 可靠性，先做）
+- [ ] 将 v2 的状态管理/超时/紧急停止与日志体系移植到 `main_v3.py`（使用 `state_manager.py`、统一 `logger.py` 配置）。
+- [ ] 修复 Executor 对话上下文累积（保证 ReAct 历史保留，避免仅覆盖 Observation）。
+- [ ] 为工具增加基础沙箱：`run_command` 加入超时/白名单/工作目录限制，去掉不必要的 shell 权限；工具执行加 try/except 与输入校验。
+- [ ] 增加循环/成本防护：最大步数、深度/递归限制、调用费用/时间预算与超限停止提示。
+
+### P1（核心能力升级，v3.1 目标）
+- [ ] Persona 引擎增强：支持动态切换/注入，Planner 能请求 Persona 角色；新增 Persona 配置入口。
+- [ ] 研究员链路：独立 Researcher 代理，统一检索→摘要→引用链；接 Tavily/或可配置 provider。
+- [ ] 观测性：结构化事件流（trace/iteration_id），成本/延迟/失败率指标与简单可视化（日志即可）。
+- [ ] 配置与安全基础：权限/超时/预算集中配置（config.yaml），统一加载校验。
+
+### P2（自进化 & 子代理，v3.2 方向）
+- [ ] Tool Builder MVP：AST 黑名单/依赖审计→沙箱运行→自动单测（合成用例）→热加载/回滚注册。
+- [ ] Sub-Agent Swarm：任务分解到专职子代理（Coder/QA/Research）；合并策略与冲突解决。
+- [ ] Prompt/Persona 治理：模板版本化、注入检测、降级策略；Prompt 评测基准与回归测试。
+
+### 里程碑交付
+- v3.0.1：P0 全部完成（安全护栏、上下文修复、成本/循环防护）。
+- v3.1.0：P1 完成（Persona/Research/观测性/配置安全），保持工具静态。
+- v3.2.0：P2 完成（Tool Builder + 子代理协作 + Prompt 治理）。

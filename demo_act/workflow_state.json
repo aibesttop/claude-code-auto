@@ -1,0 +1,67 @@
+{
+  "session_id": "10f6219d-eb55-4a60-8da2-49295c04d0fd",
+  "goal": "挖掘一个在咖啡这个利基市场的 app 机会",
+  "work_dir": "demo_act",
+  "status": "running",
+  "current_iteration": 2,
+  "max_iterations": 50,
+  "start_time": "2025-11-21T17:32:54.636396",
+  "last_update": "2025-11-21T17:38:43.424152",
+  "total_duration_seconds": 1337.778748,
+  "history": [
+    {
+      "iteration": 1,
+      "timestamp": "2025-11-21T17:33:54.725273",
+      "decision": {
+        "error": "planner_exception"
+      },
+      "duration_seconds": 60.08487629890442,
+      "success": false,
+      "error_message": "Control request timeout: initialize"
+    },
+    {
+      "iteration": 2,
+      "timestamp": "2025-11-21T17:34:54.811376",
+      "decision": {
+        "error": "planner_exception"
+      },
+      "duration_seconds": 60.08278441429138,
+      "success": false,
+      "error_message": "Control request timeout: initialize"
+    },
+    {
+      "iteration": 3,
+      "timestamp": "2025-11-21T17:35:54.915515",
+      "decision": {
+        "error": "planner_exception"
+      },
+      "duration_seconds": 60.10063314437866,
+      "success": false,
+      "error_message": "Control request timeout: initialize"
+    },
+    {
+      "iteration": 1,
+      "timestamp": "2025-11-21T17:37:43.343471",
+      "decision": {
+        "error": "planner_exception"
+      },
+      "duration_seconds": 60.07650923728943,
+      "success": false,
+      "error_message": "Control request timeout: initialize"
+    },
+    {
+      "iteration": 2,
+      "timestamp": "2025-11-21T17:38:43.424152",
+      "decision": {
+        "error": "planner_exception"
+      },
+      "duration_seconds": 60.07868432998657,
+      "success": false,
+      "error_message": "Control request timeout: initialize"
+    }
+  ],
+  "error_count": 5,
+  "last_error": "Control request timeout: initialize",
+  "successful_iterations": 0,
+  "failed_iterations": 5
+}

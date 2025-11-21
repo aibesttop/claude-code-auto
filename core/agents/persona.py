@@ -35,8 +35,10 @@ PERSONAS = {
 }
 
 class PersonaEngine:
-    def __init__(self):
+    def __init__(self, persona_config: dict = None):
         self.current_persona = PERSONAS["default"]
+        if persona_config:
+            self._load_config(persona_config)
         
     def get_persona(self, name: str) -> Optional[Persona]:
         return PERSONAS.get(name)
@@ -59,3 +61,14 @@ class PersonaEngine:
             description=description,
             system_prompt=system_prompt
         )
+
+    def _load_config(self, persona_config: dict):
+        """Load personas from config dict (with default selection)."""
+        personas = persona_config.get("personas", {}) if persona_config else {}
+        for name, meta in personas.items():
+            desc = meta.get("description", name)
+            prompt = meta.get("system_prompt", "You are a helpful assistant.")
+            self.register_persona(name, desc, prompt)
+        default_name = persona_config.get("default_persona") if persona_config else None
+        if default_name:
+            self.switch_persona(default_name)

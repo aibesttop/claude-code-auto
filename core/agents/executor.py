@@ -43,10 +43,10 @@ Final Answer: [Your summary of what was done]
 """
 
 class ExecutorAgent:
-    def __init__(self, work_dir: str):
+    def __init__(self, work_dir: str, persona_config: dict = None):
         self.work_dir = work_dir
         self.max_steps = 10
-        self.persona_engine = PersonaEngine()
+        self.persona_engine = PersonaEngine(persona_config=persona_config)
         
     def set_persona(self, persona_name: str):
         """Sets the persona for the agent"""
@@ -105,13 +105,13 @@ class ExecutorAgent:
         base_system_prompt = REACT_SYSTEM_PROMPT.format(tool_descriptions=tool_desc)
         full_system_prompt = f"{persona_prompt}\n\n{base_system_prompt}"
         
-        # Initial prompt
-        messages = [
+        # Initial prompt (kept as running history to avoid context loss)
+        history = [
             f"System: {full_system_prompt}",
             f"Task: {task_description}"
         ]
         
-        current_prompt = "\n\n".join(messages)
+        current_prompt = "\n\n".join(history)
         
         async with ClaudeSDKClient(options) as client:
             step = 0
@@ -151,17 +151,10 @@ class ExecutorAgent:
                         
                     logger.debug(f"Tool Result: {result}")
                     
-                    # Append to prompt for next turn
-                    # Note: In a real chat API we'd append to messages list. 
-                    # Here we are simulating the turn by appending text since SDK might be stateless per query?
-                    # Wait, the SDK maintains session if we don't close it? 
-                    # Actually the SDK `query` sends a new message. We need to maintain context?
-                    # The current SDK usage in step1/2/3 seems to treat `query` as a single turn or uses session_id.
-                    # For v3, we should ideally use the session context. 
-                    # Let's assume `client.query` adds to the conversation history in the backend session.
-                    # So we just need to send the Observation as the user's next message.
-                    
-                    current_prompt = observation
+                    # Append to history for next turn to preserve ReAct trace
+                    history.append(response_text.strip())
+                    history.append(observation.strip())
+                    current_prompt = "\n\n".join(history)
                     
                 else:
                     # No action found, maybe just thinking or asking for clarification?
@@ -169,10 +162,14 @@ class ExecutorAgent:
                     if "Thought:" in response_text and not action:
                         # It might be thinking without acting yet, or failed to format.
                         # We'll prompt it to continue or fix format.
-                        current_prompt = "System: I did not see a valid 'Action:' and 'Action Input:'. Please format your tool call correctly."
+                        history.append(response_text.strip())
+                        history.append("System: I did not see a valid 'Action:' and 'Action Input:'. Please format your tool call correctly.")
+                        current_prompt = "\n\n".join(history)
                     else:
                         # Assume it's done or stuck
                         logger.warning("⚠️ No action detected and no Final Answer.")
-                        current_prompt = "System: Please continue. If done, say 'Final Answer:'."
+                        history.append(response_text.strip())
+                        history.append("System: Please continue. If done, say 'Final Answer:'.")
+                        current_prompt = "\n\n".join(history)
 
             return "Error: Max steps reached without completion."

@@ -2,6 +2,7 @@
 Shell Execution Tools
 """
 import subprocess
+from pathlib import Path
 from core.tool_registry import tool
 
 @tool
@@ -16,13 +17,22 @@ def run_command(command: str) -> str:
         Combined stdout and stderr.
     """
     try:
-        # Security warning: In a real prod env, this needs strict sandboxing!
+        # Basic safety guards (best-effort; should be replaced by real sandbox)
+        lowered = command.lower()
+        banned = ["rm -rf", "shutdown", "reboot", "format", "mkfs", ":(){", "poweroff", "del /", "rd /s", "chmod 777 /", "chown root"]
+        if any(b in lowered for b in banned):
+            return "Error: Command blocked by safety policy."
+
+        if len(command) > 500:
+            return "Error: Command too long."
+
         result = subprocess.run(
             command,
             shell=True,
             capture_output=True,
             text=True,
-            timeout=60 # Default timeout
+            timeout=30,  # Tighter default timeout
+            cwd=str(Path.cwd())
         )
         
         output = result.stdout
