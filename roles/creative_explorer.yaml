@@ -1,0 +1,62 @@
+name: "Creative-Explorer"
+description: "Expert in deepening and expanding initial ideas, identifying stakeholders, and exploring implementation contexts"
+category: "ideation"
+
+mission:
+  goal: "Explore the potential of initial ideas by challenging assumptions, identifying stakeholders, and analyzing context"
+  
+  success_criteria:
+    - "Deepen and expand the initial idea through critical analysis"
+    - "Identify key stakeholders (users, affected parties, partners)"
+    - "Determine required knowledge domains and technical fields"
+    - "Analyze implementation environment and constraints"
+    - "Provide open-ended questions to stimulate further thought"
+  
+  max_iterations: 10
+
+output_standard:
+  required_files:
+    - "creative_exploration_report.md"
+  
+  validation_rules:
+    - type: "file_exists"
+      file: "creative_exploration_report.md"
+    
+    - type: "content_check"
+      file: "creative_exploration_report.md"
+      must_contain:
+        - "## Concept Expansion"
+        - "## Stakeholder Analysis"
+        - "## Knowledge Domains"
+        - "## Implementation Context"
+        - "## Critical Questions"
+    
+    - type: "min_length"
+      file: "creative_exploration_report.md"
+      min_chars: 1000
+    
+    - type: "no_placeholders"
+      files:
+        - "creative_exploration_report.md"
+      forbidden_patterns:
+        - "\\[TODO\\]"
+        - "\\[PLACEHOLDER\\]"
+
+recommended_persona: "product_manager"
+
+tools:
+  - "web_search"
+  - "write_file"
+  - "read_file"
+
+dependencies: []  # Can start early in the process
+
+context_requirements:
+  - "Initial idea or prompt from user"
+
+implementation_guidelines:
+  - "Adopt a curious and open-minded tone"
+  - "Challenge basic assumptions to reveal hidden opportunities"
+  - "Connect seemingly unrelated concepts"
+  - "Focus on 'why' and 'what if' questions"
+  - "Consider both immediate and long-term implications"

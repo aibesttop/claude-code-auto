@@ -1,0 +1,151 @@
+"""
+Team Assembler
+
+Analyzes initial_prompt and goal to determine which roles are needed.
+"""
+
+from typing import List
+from src.core.team.role_registry import RoleRegistry, Role
+from src.core.agents.sdk_client import run_claude_prompt
+from src.utils.json_utils import extract_json
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class TeamAssembler:
+    """
+    Assembles a team of roles based on initial_prompt and goal.
+    
+    Uses LLM to analyze the task and determine which roles are needed.
+    """
+    
+    def __init__(self, role_registry: RoleRegistry):
+        """
+        Initialize the team assembler.
+        
+        Args:
+            role_registry: Registry of available roles
+        """
+        self.registry = role_registry
+    
+    async def assemble_team(
+        self,
+        initial_prompt: str,
+        goal: str,
+        work_dir: str = ".",
+        model: str = None,
+        timeout: int = 60,
+        permission_mode: str = "bypassPermissions"
+    ) -> List[Role]:
+        """
+        Analyze initial_prompt and goal to determine which roles are needed.
+        
+        Args:
+            initial_prompt: User's initial prompt describing the workflow
+            goal: Overall goal to achieve
+            work_dir: Working directory
+            model: Claude model to use
+            timeout: Timeout in seconds
+            permission_mode: Permission mode for SDK
+            
+        Returns:
+            List of Role objects in execution order
+        """
+        # Build analysis prompt
+        analysis_prompt = self._build_analysis_prompt(initial_prompt, goal)
+        
+        # Call LLM to analyze
+        logger.info("Analyzing initial_prompt to determine required roles...")
+        
+        try:
+            response, _ = await run_claude_prompt(
+                analysis_prompt,
+                work_dir,
+                model=model,
+                timeout=timeout,
+                permission_mode=permission_mode
+            )
+        except Exception as e:
+            logger.error(f"Failed to call LLM for team assembly: {e}")
+            return []
+        
+        # Parse response
+        data = extract_json(response)
+        if not data:
+            logger.error("Failed to parse team assembly response")
+            logger.debug(f"LLM response: {response[:500]}")
+            return []
+        
+        role_names = data.get('roles', [])
+        reasoning = data.get('reasoning', '')
+        
+        logger.info(f"Team assembled: {role_names}")
+        logger.info(f"Reasoning: {reasoning}")
+        
+        # Load roles
+        team = []
+        for name in role_names:
+            role = self.registry.get_role(name)
+            if role:
+                team.append(role)
+            else:
+                logger.warning(f"Role not found: {name}")
+        
+        return team
+    
+    def _build_analysis_prompt(self, initial_prompt: str, goal: str) -> str:
+        """
+        Build the prompt for LLM to analyze required roles.
+        
+        Args:
+            initial_prompt: User's initial prompt
+            goal: Overall goal
+            
+        Returns:
+            Formatted prompt string
+        """
+        available_roles = self._format_available_roles()
+        
+        return f"""
+Analyze the following task and determine which roles are needed to complete it.
+
+## Initial Prompt
+{initial_prompt}
+
+## Goal
+{goal}
+
+## Available Roles
+{available_roles}
+
+## Instructions
+1. Identify which roles are needed for this task
+2. Consider dependencies between roles (e.g., Architect must come before AI-Native-Writer)
+3. Order roles by execution sequence (linear, not parallel)
+4. Output ONLY a JSON object with this structure:
+
+{{
+    "roles": ["Role-Name-1", "Role-Name-2", "Role-Name-3"],
+    "reasoning": "Brief explanation of why these roles and this order"
+}}
+
+CRITICAL: Output ONLY the JSON object. No explanatory text before or after.
+"""
+    
+    def _format_available_roles(self) -> str:
+        """
+        Format available roles for the prompt.
+        
+        Returns:
+            Formatted string of available roles
+        """
+        if not self.registry.roles:
+            return "No roles available."
+        
+        lines = []
+        for name, role in self.registry.roles.items():
+            lines.append(f"- **{name}**: {role.description}")
+            if role.dependencies:
+                lines.append(f"  Dependencies: {', '.join(role.dependencies)}")
+        return "\n".join(lines)

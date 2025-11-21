@@ -1,0 +1,101 @@
+name: "AI-Native-Writer"
+description: "AI-Native development documentation specialist following META-PROMPT standards"
+category: "documentation"
+
+mission:
+  goal: "Generate complete AI-Native development documentation system (8 core documents)"
+  
+  success_criteria:
+    - "Generate all 8 required documentation files"
+    - "Follow META-PROMPT structure and standards"
+    - "Include context from market research"
+    - "Ensure no placeholders or TODO items"
+    - "All documents are comprehensive and actionable"
+  
+  max_iterations: 15
+
+output_standard:
+  template: "docs/00-META-PROMPT-Generate-Docs.md"
+  
+  required_files:
+    - "docs/00-project-context.md"
+    - "docs/01-requirements.md"
+    - "docs/02-architecture.md"
+    - "docs/03-implementation-guide.md"
+    - "docs/04-quality-gates.md"
+    - "docs/05-ai-prompt-template.md"
+    - "docs/06-testing-strategy.md"
+    - "docs/07-deployment-guide.md"
+  
+  validation_rules:
+    - type: "all_files_exist"
+      files:
+        - "docs/00-project-context.md"
+        - "docs/01-requirements.md"
+        - "docs/02-architecture.md"
+        - "docs/03-implementation-guide.md"
+        - "docs/04-quality-gates.md"
+        - "docs/05-ai-prompt-template.md"
+        - "docs/06-testing-strategy.md"
+        - "docs/07-deployment-guide.md"
+    
+    - type: "content_check"
+      file: "docs/00-project-context.md"
+      must_contain:
+        - "# Project Context"
+        - "## Problem Statement"
+        - "## Target Users"
+        - "## Success Metrics"
+    
+    - type: "content_check"
+      file: "docs/01-requirements.md"
+      must_contain:
+        - "# Requirements"
+        - "## Functional Requirements"
+        - "## Non-Functional Requirements"
+    
+    - type: "content_check"
+      file: "docs/02-architecture.md"
+      must_contain:
+        - "# Architecture"
+        - "## System Overview"
+        - "## Component Design"
+    
+    - type: "min_length"
+      file: "docs/00-project-context.md"
+      min_chars: 1500
+    
+    - type: "min_length"
+      file: "docs/01-requirements.md"
+      min_chars: 2000
+    
+    - type: "min_length"
+      file: "docs/02-architecture.md"
+      min_chars: 2500
+    
+    - type: "no_placeholders"
+      files:
+        - "docs/00-project-context.md"
+        - "docs/01-requirements.md"
+        - "docs/02-architecture.md"
+        - "docs/03-implementation-guide.md"
+        - "docs/04-quality-gates.md"
+        - "docs/05-ai-prompt-template.md"
+        - "docs/06-testing-strategy.md"
+        - "docs/07-deployment-guide.md"
+      forbidden_patterns:
+        - "\\[TODO\\]"
+        - "\\[PLACEHOLDER\\]"
+        - "\\[TBD\\]"
+        - "\\[FILL IN\\]"
+        - "\\[INSERT.*\\]"
+
+recommended_persona: "coder"
+
+tools:
+  - "write_file"
+  - "read_file"
+  - "list_files"
+
+dependencies:
+  - "Market-Researcher"

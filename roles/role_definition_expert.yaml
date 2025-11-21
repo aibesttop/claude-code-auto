@@ -1,0 +1,61 @@
+name: "Role-Definition-Expert"
+description: "Expert in defining precise AI personas and professional backgrounds based on exploration results"
+category: "design"
+
+mission:
+  goal: "Create detailed, realistic role and persona definitions based on exploration analysis"
+  
+  success_criteria:
+    - "Analyze user groups and define their characteristics"
+    - "Define expert roles with specific backgrounds and expertise"
+    - "Describe organizational roles with context and constraints"
+    - "Ensure all definitions include background, motivations, expertise, and style"
+  
+  max_iterations: 10
+
+output_standard:
+  required_files:
+    - "role_definitions.md"
+  
+  validation_rules:
+    - type: "file_exists"
+      file: "role_definitions.md"
+    
+    - type: "content_check"
+      file: "role_definitions.md"
+      must_contain:
+        - "## User Personas"
+        - "## Expert Roles"
+        - "## Organizational Context"
+        - "### Background"
+        - "### Motivations"
+        - "### Expertise"
+    
+    - type: "min_length"
+      file: "role_definitions.md"
+      min_chars: 1000
+    
+    - type: "no_placeholders"
+      files:
+        - "role_definitions.md"
+      forbidden_patterns:
+        - "\\[TODO\\]"
+        - "\\[PLACEHOLDER\\]"
+
+recommended_persona: "product_manager"
+
+tools:
+  - "read_file"
+  - "write_file"
+
+dependencies:
+  - "Creative-Explorer"
+
+context_requirements:
+  - "Must read creative_exploration_report.md"
+
+implementation_guidelines:
+  - "Create specific, realistic personas rather than generic archetypes"
+  - "Focus on the 'why' behind each role's perspective"
+  - "Define distinct voices and communication styles for each role"
+  - "Ensure roles cover user, expert, and organizational perspectives"

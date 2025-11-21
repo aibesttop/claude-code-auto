@@ -1,0 +1,56 @@
+name: "SEO-Specialist"
+description: "SEO optimization specialist for search engine visibility and content strategy"
+category: "marketing"
+
+mission:
+  goal: "Generate comprehensive SEO optimization strategy and implementation plan"
+  
+  success_criteria:
+    - "Identify target keywords and search intent"
+    - "Provide on-page SEO recommendations"
+    - "Include technical SEO checklist"
+    - "Define content strategy and topics"
+    - "Output seo-strategy.md with actionable plan"
+  
+  max_iterations: 8
+
+output_standard:
+  required_files:
+    - "seo-strategy.md"
+  
+  validation_rules:
+    - type: "file_exists"
+      file: "seo-strategy.md"
+    
+    - type: "content_check"
+      file: "seo-strategy.md"
+      must_contain:
+        - "## Keyword Research"
+        - "## On-Page SEO"
+        - "## Technical SEO"
+        - "## Content Strategy"
+        - "## Link Building"
+        - "## Performance Metrics"
+    
+    - type: "min_length"
+      file: "seo-strategy.md"
+      min_chars: 1800
+    
+    - type: "no_placeholders"
+      files:
+        - "seo-strategy.md"
+      forbidden_patterns:
+        - "\\[TODO\\]"
+        - "\\[PLACEHOLDER\\]"
+        - "\\[TBD\\]"
+
+recommended_persona: "product_manager"
+
+tools:
+  - "web_search"
+  - "write_file"
+  - "read_file"
+
+dependencies:
+  - "Market-Researcher"
+  - "AI-Native-Writer"

@@ -1,0 +1,156 @@
+name: "AI-Native-Developer"
+description: "Full-stack developer who implements complete applications following AI-Native documentation standards"
+category: "engineering"
+
+mission:
+  goal: "Implement a complete, deployable codebase following the AI-Native documentation system"
+  
+  success_criteria:
+    - "Read and understand all 8 documentation files from AI-Native-Writer"
+    - "Implement all functional requirements specified in 01-requirements.md"
+    - "Follow architecture design from 02-architecture.md"
+    - "Adhere to coding standards from 03-implementation-guide.md"
+    - "Pass all quality gates from 04-quality-gates.md"
+    - "Achieve 80%+ test coverage"
+    - "Create deployable Docker image"
+    - "All tests pass successfully"
+  
+  max_iterations: 20
+
+output_standard:
+  required_files:
+    - "src/main.py"
+    - "src/requirements.txt"
+    - "tests/test_main.py"
+    - "Dockerfile"
+    - "README.md"
+    - ".env.example"
+  
+  validation_rules:
+    - type: "all_files_exist"
+      files:
+        - "src/main.py"
+        - "src/requirements.txt"
+        - "tests/test_main.py"
+        - "Dockerfile"
+        - "README.md"
+        - ".env.example"
+    
+    - type: "content_check"
+      file: "src/main.py"
+      must_contain:
+        - "def main"
+        - "if __name__"
+    
+    - type: "content_check"
+      file: "tests/test_main.py"
+      must_contain:
+        - "def test_"
+        - "import pytest"
+    
+    - type: "content_check"
+      file: "Dockerfile"
+      must_contain:
+        - "FROM"
+        - "COPY"
+        - "CMD"
+    
+    - type: "content_check"
+      file: "README.md"
+      must_contain:
+        - "## Installation"
+        - "## Usage"
+        - "## Testing"
+        - "## Deployment"
+    
+    - type: "min_length"
+      file: "src/main.py"
+      min_chars: 500
+    
+    - type: "min_length"
+      file: "tests/test_main.py"
+      min_chars: 300
+    
+    - type: "min_length"
+      file: "README.md"
+      min_chars: 800
+    
+    - type: "no_placeholders"
+      files:
+        - "src/main.py"
+        - "tests/test_main.py"
+        - "Dockerfile"
+        - "README.md"
+        - ".env.example"
+      forbidden_patterns:
+        - "\\[TODO\\]"
+        - "\\[PLACEHOLDER\\]"
+        - "\\[TBD\\]"
+        - "\\[FILL IN\\]"
+        - "\\[YOUR_.*\\]"
+        - "REPLACE_ME"
+
+recommended_persona: "coder"
+
+tools:
+  - "write_file"
+  - "read_file"
+  - "list_files"
+  - "run_command"
+
+dependencies:
+  - "AI-Native-Writer"
+
+context_requirements:
+  - "Must read docs/00-project-context.md"
+  - "Must read docs/01-requirements.md"
+  - "Must read docs/02-architecture.md"
+  - "Must read docs/03-implementation-guide.md"
+  - "Must read docs/04-quality-gates.md"
+  - "Must read docs/05-ai-prompt-template.md"
+  - "Must read docs/06-testing-strategy.md"
+  - "Must read docs/07-deployment-guide.md"
+
+implementation_guidelines:
+  - "Follow the exact directory structure specified in 02-architecture.md"
+  - "Implement type hints and docstrings for all functions"
+  - "Write comprehensive unit tests with 80%+ coverage"
+  - "Use environment variables for all configuration (no hardcoded secrets)"
+  - "Include error handling and logging"
+  - "Optimize for performance (database queries, API calls)"
+  - "Follow security best practices (input validation, SQL injection prevention)"
+  - "Create Docker image with multi-stage builds"
+  - "Include health check endpoint"
+
+quality_gates:
+  - "All unit tests pass (pytest tests/)"
+  - "Code coverage ≥ 80%"
+  - "No linting errors (black, flake8, mypy)"
+  - "Security scan passes (bandit, safety)"
+  - "Performance test passes (P95 < 200ms)"
+  - "Docker image builds successfully"
+  - "Health check endpoint returns 200"
+
+deliverables:
+  source_code:
+    - "Complete application source code in src/"
+    - "Type hints and docstrings for all functions"
+    - "Proper error handling and logging"
+  
+  tests:
+    - "Unit tests in tests/"
+    - "Integration tests if applicable"
+    - "Test fixtures and mocks"
+    - "80%+ code coverage"
+  
+  infrastructure:
+    - "Dockerfile with multi-stage builds"
+    - "docker-compose.yml if needed"
+    - ".env.example with all required variables"
+    - "requirements.txt with pinned versions"
+  
+  documentation:
+    - "README.md with installation, usage, testing, deployment"
+    - "API documentation (OpenAPI/Swagger if applicable)"
+    - "Inline code comments for complex logic"
+    - "Migration scripts if database changes"

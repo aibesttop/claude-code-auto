@@ -23,6 +23,10 @@ import src.core.tools
 from src.utils.state_manager import StateManager, WorkflowStatus
 # Import event and cost tracking
 from src.core.events import EventStore, EventType, CostTracker, TokenUsage
+# Import team mode components
+from src.core.team.role_registry import RoleRegistry
+from src.core.team.team_assembler import TeamAssembler
+from src.core.team.team_orchestrator import TeamOrchestrator
 
 
 async def _sdk_health_check(work_dir: Path, timeout: int, logger, model: str = None, permission_mode: str = "bypassPermissions"):
@@ -46,6 +50,119 @@ async def _sdk_health_check(work_dir: Path, timeout: int, logger, model: str = N
         return False
     except Exception as e:
         logger.error(f"SDK health check failed: {e}")
+        return False
+
+
+async def run_team_mode(config, executor, work_dir, logger, event_store, session_id):
+    """
+    Execute in team mode: assemble and orchestrate a team of roles.
+    
+    Args:
+        config: Configuration object
+        executor: ExecutorAgent instance (reused for role execution)
+        work_dir: Working directory path
+        logger: Logger instance
+        event_store: EventStore instance
+        session_id: Session ID
+        
+    Returns:
+        bool: True if team mission succeeded, False otherwise
+    """
+    logger.info("🎭 Team Mode Activated")
+    logger.info(f"Initial Prompt: {config.task.initial_prompt[:200]}...")
+    
+    # Log team mode start event
+    event_store.create_event(
+        EventType.SESSION_START,
+        session_id=session_id,
+        mode="team",
+        goal=config.task.goal,
+        initial_prompt=config.task.initial_prompt[:500]
+    )
+    
+    try:
+        # 1. Load role registry
+        role_registry = RoleRegistry(roles_dir="roles")
+        logger.info(f"📚 Loaded {len(role_registry.roles)} roles: {role_registry.list_roles()}")
+        
+        if len(role_registry.roles) == 0:
+            logger.error("❌ No roles found in roles/ directory. Cannot proceed with team mode.")
+            return False
+        
+        # 2. Assemble team
+        logger.info("🔍 Assembling team based on initial_prompt...")
+        assembler = TeamAssembler(role_registry)
+        
+        roles = await assembler.assemble_team(
+            initial_prompt=config.task.initial_prompt,
+            goal=config.task.goal,
+            work_dir=str(work_dir),
+            model=config.claude.model,
+            timeout=config.claude.timeout_seconds,
+            permission_mode=config.claude.permission_mode
+        )
+        
+        if not roles:
+            logger.error("❌ Failed to assemble team. Falling back to original mode.")
+            return False
+        
+        logger.info(f"✅ Team assembled: {[r.name for r in roles]}")
+        
+        # Log team assembly event
+        event_store.create_event(
+            EventType.PLANNER_COMPLETE,
+            session_id=session_id,
+            team_roles=[r.name for r in roles],
+            team_size=len(roles)
+        )
+        
+        # 3. Execute team workflow
+        logger.info("🚀 Starting team orchestration...")
+        orchestrator = TeamOrchestrator(
+            roles=roles,
+            executor_agent=executor,
+            work_dir=str(work_dir)
+        )
+        
+        result = await orchestrator.execute(config.task.goal)
+        
+        # 4. Report results
+        if result['success']:
+            logger.info("✅ Team mission accomplished!")
+            logger.info(f"📊 Completed {result['completed_roles']}/{len(roles)} roles")
+            
+            # Log success details
+            for role_name, role_result in result['results'].items():
+                logger.info(f"   {role_name}: {role_result['iterations']} iterations")
+            
+            event_store.create_event(
+                EventType.SESSION_END,
+                session_id=session_id,
+                status="success",
+                completed_roles=result['completed_roles'],
+                total_roles=len(roles)
+            )
+            return True
+        else:
+            logger.error(f"❌ Team failed at role {result['completed_roles']}/{len(roles)}")
+            
+            event_store.create_event(
+                EventType.SESSION_END,
+                session_id=session_id,
+                status="failed",
+                completed_roles=result['completed_roles'],
+                total_roles=len(roles)
+            )
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ Team mode execution failed: {e}")
+        event_store.create_event(
+            EventType.SESSION_END,
+            session_id=session_id,
+            status="error",
+            error=str(e)
+        )
         return False
 
 
@@ -160,7 +277,51 @@ async def main(config_path: str = "config.yaml"):
         retry_delay=config.error_handling.retry_delay_seconds,
     )
 
-    # 3. Main Loop
+    # Check for team mode activation
+    if config.task.initial_prompt and len(config.task.initial_prompt.strip()) > 0:
+        logger.info("🎭 Detected initial_prompt - activating Team Mode")
+        
+        # Run team mode
+        team_success = await run_team_mode(
+            config=config,
+            executor=executor,
+            work_dir=work_dir,
+            logger=logger,
+            event_store=event_store,
+            session_id=session_id
+        )
+        
+        if team_success:
+            logger.info("✅ Team mode completed successfully")
+            state.status = WorkflowStatus.COMPLETED
+            state_manager.save()
+            
+            # Generate final reports (reuse existing code)
+            logger.info("\n" + "=" * 60)
+            logger.info("📊 Final Reports")
+            logger.info("=" * 60)
+            
+            cost_report = cost_tracker.generate_report(session_id)
+            logger.info(f"💰 Total Cost: ${cost_report.get('total_cost_usd', 0):.4f}")
+            logger.info(f"📈 Total Tokens: {cost_report.get('total_tokens', {}).get('total_tokens', 0)}")
+            logger.info(f"🔧 Total API Calls: {cost_report.get('total_calls', 0)}")
+            
+            event_stats = event_store.get_event_statistics(session_id)
+            logger.info(f"📋 Total Events: {event_stats.get('total_events', 0)}")
+            
+            try:
+                event_file = event_store.save_to_file(session_id)
+                logger.info(f"💾 Events saved to: {event_file}")
+            except Exception as e:
+                logger.error(f"Failed to save events: {e}")
+            
+            logger.info("=" * 60 + "\n")
+            return
+        else:
+            logger.warning("⚠️ Team mode failed, falling back to original mode")
+            # Continue to original mode below
+
+    # 3. Main Loop (Original Mode)
     iteration = 0
     max_iterations = config.safety.max_iterations
     last_result = None

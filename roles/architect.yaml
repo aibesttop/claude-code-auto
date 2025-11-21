@@ -1,0 +1,58 @@
+name: "Architect"
+description: "System architecture specialist for technical design and infrastructure planning"
+category: "engineering"
+
+mission:
+  goal: "Design comprehensive system architecture with technical specifications"
+  
+  success_criteria:
+    - "Define system architecture and component design"
+    - "Specify technology stack and infrastructure"
+    - "Include data models and API specifications"
+    - "Provide scalability and security considerations"
+    - "Output architecture-design.md with diagrams"
+  
+  max_iterations: 12
+
+output_standard:
+  required_files:
+    - "architecture-design.md"
+  
+  validation_rules:
+    - type: "file_exists"
+      file: "architecture-design.md"
+    
+    - type: "content_check"
+      file: "architecture-design.md"
+      must_contain:
+        - "## System Overview"
+        - "## Architecture Diagram"
+        - "## Component Design"
+        - "## Technology Stack"
+        - "## Data Models"
+        - "## API Specifications"
+        - "## Scalability"
+        - "## Security"
+    
+    - type: "min_length"
+      file: "architecture-design.md"
+      min_chars: 3000
+    
+    - type: "no_placeholders"
+      files:
+        - "architecture-design.md"
+      forbidden_patterns:
+        - "\\[TODO\\]"
+        - "\\[PLACEHOLDER\\]"
+        - "\\[TBD\\]"
+        - "\\[DESIGN PENDING\\]"
+
+recommended_persona: "coder"
+
+tools:
+  - "write_file"
+  - "read_file"
+  - "list_files"
+
+dependencies:
+  - "Market-Researcher"
