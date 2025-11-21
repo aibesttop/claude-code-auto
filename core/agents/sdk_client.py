@@ -47,6 +47,7 @@ async def run_claude_prompt(
                 permission_mode=permission_mode,
                 cwd=work_dir,
                 model=model,
+                extra_args={"debug-to-stderr": None},  # surface CLI errors
             )
 
             response_text = ""
