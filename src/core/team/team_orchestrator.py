@@ -8,6 +8,8 @@ from typing import List, Dict, Any
 from src.core.team.role_registry import Role
 from src.core.team.role_executor import RoleExecutor
 from src.core.agents.executor import ExecutorAgent
+from src.utils.state_helper import StateManagerHelper
+from src.utils.state_manager import NodeStatus
 import logging
 
 logger = logging.getLogger(__name__)
@@ -42,6 +44,9 @@ class TeamOrchestrator:
         self.work_dir = work_dir
         self.state_manager = state_manager
 
+        # State management helper (eliminates code duplication)
+        self.state_helper = StateManagerHelper(state_manager)
+
         # Context storage (outputs from completed roles)
         self.context: Dict[str, Any] = {}
     
@@ -71,16 +76,7 @@ class TeamOrchestrator:
             logger.info(f"{'='*60}")
 
             # Update role status to IN_PROGRESS
-            if self.state_manager:
-                from src.utils.state_manager import NodeStatus
-                from datetime import datetime
-                state = self.state_manager.get_state()
-                role_state = state.get_role(role.name)
-                if role_state:
-                    role_state.status = NodeStatus.IN_PROGRESS
-                    role_state.start_time = datetime.now().isoformat()
-                    state.set_current_role(role.name)
-                    self.state_manager.save()
+            self.state_helper.update_role_status(role.name, NodeStatus.IN_PROGRESS)
 
             # Create role executor
             role_executor = RoleExecutor(
@@ -96,19 +92,20 @@ class TeamOrchestrator:
             results[role.name] = result
 
             # Update role status based on result
-            if self.state_manager:
-                from src.utils.state_manager import NodeStatus
-                from datetime import datetime
-                state = self.state_manager.get_state()
-                role_state = state.get_role(role.name)
-                if role_state:
-                    role_state.status = NodeStatus.COMPLETED if result['success'] else NodeStatus.FAILED
-                    role_state.end_time = datetime.now().isoformat()
-                    role_state.iterations = result.get('iterations', 0)
-                    role_state.outputs = result.get('outputs', [])
-                    if not result['success'] and 'validation_errors' in result:
-                        role_state.validation_errors = result['validation_errors']
-                    self.state_manager.save()
+            final_status = NodeStatus.COMPLETED if result['success'] else NodeStatus.FAILED
+            self.state_helper.update_role_status(
+                role.name,
+                final_status,
+                iterations=result.get('iterations', 0),
+                outputs=result.get('outputs', [])
+            )
+
+            # Add validation errors if failed
+            if not result['success'] and 'validation_errors' in result:
+                self.state_helper.add_role_validation_errors(
+                    role.name,
+                    result['validation_errors']
+                )
 
             # Check success
             if not result['success']:

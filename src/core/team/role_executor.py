@@ -10,6 +10,7 @@ from src.core.team.role_registry import Role, ValidationRule
 from src.core.agents.executor import ExecutorAgent
 from src.core.agents.planner import PlannerAgent
 from src.core.team.quality_validator import SemanticQualityValidator
+from src.core.team.validator import OptimizedValidator
 import logging
 import re
 
@@ -53,6 +54,9 @@ class RoleExecutor:
         self.work_dir = Path(work_dir)
         self.session_id = session_id or "unknown"
         self.use_planner = use_planner
+
+        # Initialize optimized validator with caching
+        self.validator = OptimizedValidator()
 
         # Estimate task complexity for adaptive validation
         self.task_complexity = self._estimate_task_complexity(role.mission.goal)
@@ -388,7 +392,14 @@ Do NOT regenerate everything, just fix the specific issues.
         }
 
     def _validate_format(self) -> List[str]:
-        """Validate format rules (file existence, content, length)"""
+        """
+        Validate format rules using optimized caching.
+
+        Performance improvements:
+        - File content cached by modification time
+        - Compiled regex patterns cached
+        - Single normalization pass per file
+        """
         errors = []
 
         for rule in self.role.output_standard.validation_rules:
@@ -396,80 +407,49 @@ Do NOT regenerate everything, just fix the specific issues.
 
             if rule_type == "file_exists":
                 file_path = self.work_dir / rule.file
-                if not file_path.exists():
-                    errors.append(f"Missing required file: {rule.file}")
+                error = self.validator.validate_file_exists(file_path)
+                if error:
+                    errors.append(error)
 
             elif rule_type == "all_files_exist":
                 for file in rule.files:
                     file_path = self.work_dir / file
-                    if not file_path.exists():
-                        errors.append(f"Missing required file: {file}")
+                    error = self.validator.validate_file_exists(file_path)
+                    if error:
+                        errors.append(error)
 
             elif rule_type == "content_check":
                 file_path = self.work_dir / rule.file
-                if file_path.exists():
-                    content = file_path.read_text(encoding='utf-8')
-                    for required in rule.must_contain:
-                        # Flexible pattern matching for markdown headers
-                        # Handles variations like "## Header", "##Header", "##  Header"
-
-                        # Method 1: Try exact match first (fastest)
-                        if required in content:
-                            continue  # Found - skip to next requirement
-
-                        # Method 2: Try flexible whitespace pattern
-                        # Escape special regex chars but preserve structure
-                        pattern = re.escape(required)
-                        # Allow flexible whitespace: 0 or more spaces/tabs
-                        pattern = pattern.replace(r'\ ', r'\s*')
-
-                        # Search with multiline and case-sensitive matching
-                        if re.search(pattern, content, re.MULTILINE):
-                            continue  # Found - skip to next requirement
-
-                        # Method 3: Try normalized comparison (remove extra whitespace)
-                        normalized_required = ' '.join(required.split())
-                        normalized_content = ' '.join(content.split())
-
-                        if normalized_required in normalized_content:
-                            logger.warning(f"Found '{required}' in {rule.file} with whitespace normalization")
-                            continue
-
-                        # Not found - log detailed error
-                        errors.append(f"{rule.file} missing section: {required}")
-                        logger.warning(f"❌ Failed to find '{required}' in {rule.file}")
-                        logger.debug(f"Tried pattern: {pattern}")
-                        logger.debug(f"File content (first 1000 chars):\n{content[:1000]}")
-                        logger.debug(f"File content (headers only):")
-                        # Extract and log all markdown headers for debugging
-                        headers = re.findall(r'^#{1,6}\s+.+$', content, re.MULTILINE)
-                        for h in headers[:20]:  # Limit to first 20 headers
-                            logger.debug(f"  Found header: {h}")
-                else:
-                    errors.append(f"Cannot check content, file missing: {rule.file}")
+                # Use optimized batch validation (single file read)
+                content_errors = self.validator.validate_content(
+                    file_path,
+                    rule.must_contain
+                )
+                errors.extend(content_errors)
 
             elif rule_type == "no_placeholders":
                 for file in rule.files:
                     file_path = self.work_dir / file
-                    if file_path.exists():
-                        content = file_path.read_text(encoding='utf-8')
-                        for pattern in rule.forbidden_patterns:
-                            if re.search(pattern, content):
-                                errors.append(f"{file} contains placeholder: {pattern}")
+                    placeholder_errors = self.validator.validate_no_placeholders(
+                        file_path,
+                        rule.forbidden_patterns
+                    )
+                    errors.extend(placeholder_errors)
 
             elif rule_type == "min_length":
                 file_path = self.work_dir / rule.file
-                if file_path.exists():
-                    content = file_path.read_text(encoding='utf-8')
+                # Use adaptive min_chars based on task complexity
+                effective_min_chars = rule.get_effective_min_chars(self.task_complexity)
 
-                    # Use adaptive min_chars based on task complexity
-                    effective_min_chars = rule.get_effective_min_chars(self.task_complexity)
-
-                    if len(content) < effective_min_chars:
-                        complexity_info = f" [complexity: {self.task_complexity}]" if rule.adaptive else ""
-                        errors.append(
-                            f"{rule.file} too short: {len(content)} < {effective_min_chars} chars{complexity_info}"
-                        )
+                error = self.validator.validate_min_length(
+                    file_path,
+                    effective_min_chars
+                )
+                if error:
+                    # Add complexity info if adaptive
+                    if rule.adaptive:
+                        error += f" [complexity: {self.task_complexity}]"
+                    errors.append(error)
 
         return errors
 
