@@ -5,6 +5,7 @@ Wraps ResearcherAgent as callable tools for role execution.
 Provides deep_research and quick_research functions.
 """
 import asyncio
+import concurrent.futures
 from typing import Dict, Optional, TYPE_CHECKING
 from src.core.tool_registry import tool
 from src.utils.logger import get_logger
@@ -41,6 +42,33 @@ def get_researcher() -> "ResearcherAgent":
     return _researcher_instance
 
 
+def _run_async_in_new_loop(coro):
+    """
+    Run an async coroutine in a new event loop in a separate thread.
+
+    This is needed because tools are called from within an already-running
+    event loop (the executor's async context), so we can't use
+    loop.run_until_complete() directly.
+
+    Args:
+        coro: Coroutine to run
+
+    Returns:
+        Result of the coroutine
+    """
+    def run_in_thread():
+        new_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(new_loop)
+        try:
+            return new_loop.run_until_complete(coro)
+        finally:
+            new_loop.close()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(run_in_thread)
+        return future.result()
+
+
 @tool
 def quick_research(query: str) -> str:
     """
@@ -57,14 +85,21 @@ def quick_research(query: str) -> str:
     """
     researcher = get_researcher()
 
-    # Run async method in sync context
+    # Run async method - handle both sync and already-running async contexts
     try:
         loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # We're inside an async context - run in separate thread
+            result = _run_async_in_new_loop(researcher.research(query, use_cache=True))
+        else:
+            # No running loop - safe to use run_until_complete
+            result = loop.run_until_complete(researcher.research(query, use_cache=True))
     except RuntimeError:
+        # No event loop at all - create one
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(researcher.research(query, use_cache=True))
 
-    result = loop.run_until_complete(researcher.research(query, use_cache=True))
     return result
 
 
@@ -102,14 +137,20 @@ def deep_research(query: str, max_results: int = 3) -> dict:
     # Validate max_results
     max_rounds = max(1, min(max_results, 5))
 
-    # Run async method in sync context
+    # Run async method - handle both sync and already-running async contexts
     try:
         loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # We're inside an async context - run in separate thread
+            result = _run_async_in_new_loop(researcher.deep_research(query, max_rounds=max_rounds))
+        else:
+            # No running loop - safe to use run_until_complete
+            result = loop.run_until_complete(researcher.deep_research(query, max_rounds=max_rounds))
     except RuntimeError:
+        # No event loop at all - create one
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-
-    result = loop.run_until_complete(researcher.deep_research(query, max_rounds=max_rounds))
+        result = loop.run_until_complete(researcher.deep_research(query, max_rounds=max_rounds))
 
     # Format response for better usability
     return {

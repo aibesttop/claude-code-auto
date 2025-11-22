@@ -1,0 +1,61 @@
+# MCP Server Configurations
+# Defines all available MCP servers and their capabilities
+
+mcp_servers:
+  # Local filesystem access
+  filesystem:
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-filesystem"
+      - "./workspace"
+    capabilities:
+      - read_file
+      - write_file
+      - list_directory
+      - create_directory
+      - delete_file
+    description: "Local filesystem access for reading/writing files"
+
+  # Brave Search API
+  brave_search:
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-brave-search"
+    env:
+      BRAVE_API_KEY: "${BRAVE_API_KEY}"
+    capabilities:
+      - web_search
+      - news_search
+      - local_search
+    description: "Brave Search engine API for web research"
+
+  # Git version control
+  git:
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-git"
+    capabilities:
+      - git_status
+      - git_commit
+      - git_log
+      - git_diff
+    description: "Git version control operations"
+
+  # PostgreSQL database (if needed)
+  postgres:
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-postgres"
+      - "postgresql://localhost/mydb"
+    env:
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    capabilities:
+      - query_database
+      - execute_sql
+      - list_tables
+      - describe_table
+    description: "PostgreSQL database access"

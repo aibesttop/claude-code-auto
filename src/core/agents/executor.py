@@ -59,7 +59,11 @@ class ExecutorAgent:
         retry_delay: float = 2.0,
     ):
         self.work_dir = work_dir
-        self.max_steps = 10
+
+        # ReAct loop configuration
+        # Increased from 10 to 30 for complex tasks (市场调研等需要更多步骤)
+        self.max_steps = 30
+
         self.persona_engine = PersonaEngine(persona_config=persona_config)
         self.model = model
         self.timeout_seconds = timeout_seconds
@@ -126,17 +130,27 @@ class ExecutorAgent:
         self.current_task = task_description
         self.react_history = []
 
+        # Ensure work directory exists and get absolute path
+        work_dir_path = Path(self.work_dir).resolve()
+        work_dir_path.mkdir(parents=True, exist_ok=True)
+        logger.info(f"📁 Work directory: {work_dir_path}")
+
         tool_desc = self._get_tool_descriptions()
 
         persona_prompt = self.persona_engine.get_system_prompt()
         base_system_prompt = REACT_SYSTEM_PROMPT.format(tool_descriptions=tool_desc)
-        full_system_prompt = f"{persona_prompt}\n\n{base_system_prompt}"
+
+        # Add work directory instruction to system prompt
+        # IMPORTANT: Use forward slashes for JSON compatibility
+        work_dir_str = str(work_dir_path).replace('\\', '/')
+        work_dir_instruction = f"\n\n## Working Directory\nAll file operations should use paths relative to: {self.work_dir}\nWhen using write_file or read_file, use RELATIVE paths like 'filename.md' or 'subdir/filename.md'\nDO NOT use absolute paths. Always use forward slashes (/) in paths for JSON compatibility."
+        full_system_prompt = f"{persona_prompt}\n\n{base_system_prompt}{work_dir_instruction}"
 
         history = [
             f"System: {full_system_prompt}",
             f"Task: {task_description}"
         ]
-        
+
         current_prompt = "\n\n".join(history)
         step = 0
 
@@ -163,14 +177,14 @@ class ExecutorAgent:
                 return f"Error: {exc}"
 
             logger.debug(f"Claude Response:\n{response_text}")
-            
+
             if "Final Answer:" in response_text:
                 final_answer = response_text.split("Final Answer:")[1].strip()
                 logger.info(f"Task Completed: {final_answer}")
                 return final_answer
-            
+
             action, args = self._parse_action(response_text)
-            
+
             if action and args is not None:
                 logger.info(f"🛠️ Calling Tool: {action}")
                 result = None
@@ -179,13 +193,13 @@ class ExecutorAgent:
                     observation = f"\nObservation: {result}\n"
                 except Exception as e:  # pylint: disable=broad-except
                     observation = f"\nObservation: Error executing tool: {str(e)}\n"
-                
+
                 logger.debug(f"Tool Result: {result}")
-                
+
                 history.append(response_text.strip())
                 history.append(observation.strip())
                 current_prompt = "\n\n".join(history)
-                
+
             else:
                 if "Thought:" in response_text and not action:
                     history.append(response_text.strip())

@@ -27,6 +27,8 @@ from src.core.events import EventStore, EventType, CostTracker, TokenUsage
 from src.core.team.role_registry import RoleRegistry
 from src.core.team.team_assembler import TeamAssembler
 from src.core.team.team_orchestrator import TeamOrchestrator
+# Import Leader mode (v4.0)
+from src.core.leader.leader_agent import LeaderAgent
 
 
 async def _sdk_health_check(work_dir: Path, timeout: int, logger, model: str = None, permission_mode: str = "bypassPermissions"):
@@ -50,6 +52,78 @@ async def _sdk_health_check(work_dir: Path, timeout: int, logger, model: str = N
         return False
     except Exception as e:
         logger.error(f"SDK health check failed: {e}")
+        return False
+
+
+async def run_leader_mode(config, work_dir, logger, event_store, cost_tracker, session_id):
+    """
+    Execute in Leader mode (v4.0): Dynamic orchestration with intelligent intervention.
+
+    Args:
+        config: Configuration object
+        work_dir: Working directory path
+        logger: Logger instance
+        event_store: EventStore instance
+        cost_tracker: CostTracker instance
+        session_id: Session ID
+
+    Returns:
+        bool: True if leader mission succeeded, False otherwise
+    """
+    logger.info("🎯 Leader Mode Activated (v4.0)")
+    logger.info(f"Goal: {config.task.goal}")
+
+    # Log leader mode start event
+    event_store.create_event(
+        EventType.SESSION_START,
+        session_id=session_id,
+        mode="leader",
+        goal=config.task.goal
+    )
+
+    try:
+        # Initialize Leader Agent
+        leader = LeaderAgent(
+            work_dir=str(work_dir),
+            model=config.claude.model,
+            max_mission_retries=config.leader.max_mission_retries,
+            quality_threshold=config.leader.quality_threshold,
+            budget_limit_usd=config.cost_control.max_budget_usd if config.cost_control.enabled else None,
+            session_id=session_id
+        )
+
+        # Execute with Leader
+        result = await leader.execute(
+            goal=config.task.goal,
+            session_id=session_id
+        )
+
+        if result['success']:
+            logger.info("✅ Leader mode completed successfully")
+
+            # Log deliverable
+            deliverable = result['deliverable']
+            metadata = result['metadata']
+
+            logger.info("\n" + "=" * 60)
+            logger.info("📦 Leader Mode Summary")
+            logger.info("=" * 60)
+            logger.info(f"Total Missions: {metadata['total_missions']}")
+            logger.info(f"Completed: {metadata['completed_missions']}")
+            logger.info(f"Interventions: {metadata['intervention_count']}")
+            logger.info(f"Cost: ${metadata['total_cost_usd']:.2f}")
+            logger.info(f"Duration: {metadata['execution_time_seconds']:.1f}s")
+            logger.info("=" * 60 + "\n")
+
+            return True
+        else:
+            logger.error(f"❌ Leader mode failed: {result.get('error')}")
+            return False
+
+    except Exception as e:
+        logger.error(f"❌ Leader mode exception: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -286,10 +360,52 @@ async def main(config_path: str = "config.yaml"):
         retry_delay=config.error_handling.retry_delay_seconds,
     )
 
+    # Check for Leader mode activation (v4.0) - Takes priority over Team mode
+    if config.leader.enabled:
+        logger.info("🎯 Leader mode enabled in config")
+
+        # Run Leader mode
+        leader_success = await run_leader_mode(
+            config=config,
+            work_dir=work_dir,
+            logger=logger,
+            event_store=event_store,
+            cost_tracker=cost_tracker,
+            session_id=session_id
+        )
+
+        if leader_success:
+            logger.info("✅ Leader mode completed successfully")
+            state.status = WorkflowStatus.COMPLETED
+            state_manager.save()
+
+            # Generate final reports
+            logger.info("\n" + "=" * 60)
+            logger.info("📊 Final Reports")
+            logger.info("=" * 60)
+
+            cost_report = cost_tracker.generate_report(session_id)
+            logger.info(f"💰 Total Cost: ${cost_report.get('total_cost_usd', 0):.4f}")
+
+            event_stats = event_store.get_event_statistics(session_id)
+            logger.info(f"📋 Total Events: {event_stats.get('total_events', 0)}")
+
+            try:
+                event_file = event_store.save_to_file(session_id)
+                logger.info(f"💾 Events saved to: {event_file}")
+            except Exception as e:
+                logger.error(f"Failed to save events: {e}")
+
+            logger.info("=" * 60 + "\n")
+            return
+        else:
+            logger.warning("⚠️ Leader mode failed, falling back to original mode")
+            # Continue to check team mode or original mode below
+
     # Check for team mode activation
     if config.task.initial_prompt and len(config.task.initial_prompt.strip()) > 0:
         logger.info("🎭 Detected initial_prompt - activating Team Mode")
-        
+
         # Run team mode
         team_success = await run_team_mode(
             config=config,

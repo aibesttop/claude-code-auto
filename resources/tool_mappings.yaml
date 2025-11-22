@@ -1,0 +1,90 @@
+# Tool Mappings
+# Maps mission types to required tools and MCP servers
+
+mappings:
+  # Market Research missions
+  market_research:
+    required_tools:
+      - web_search
+      - deep_research
+      - write_file
+    optional_tools:
+      - web_fetch
+      - quick_research
+    mcp_servers:
+      - brave_search
+      - filesystem
+
+  # Documentation writing missions
+  documentation:
+    required_tools:
+      - write_file
+      - read_file
+      - list_dir
+    optional_tools:
+      - web_search
+    mcp_servers:
+      - filesystem
+
+  # Code generation missions
+  code_generation:
+    required_tools:
+      - write_file
+      - read_file
+    optional_tools:
+      - git_commit
+    mcp_servers:
+      - filesystem
+      - git
+
+  # Architecture design missions
+  architecture_design:
+    required_tools:
+      - write_file
+      - read_file
+    optional_tools:
+      - web_search
+    mcp_servers:
+      - filesystem
+
+  # SEO strategy missions
+  seo_strategy:
+    required_tools:
+      - web_search
+      - write_file
+    optional_tools:
+      - web_fetch
+    mcp_servers:
+      - brave_search
+      - filesystem
+
+  # Creative exploration missions
+  creative_exploration:
+    required_tools:
+      - web_search
+      - write_file
+    optional_tools:
+      - deep_research
+    mcp_servers:
+      - brave_search
+      - filesystem
+
+  # Database design missions
+  database_design:
+    required_tools:
+      - write_file
+    optional_tools:
+      - query_database
+    mcp_servers:
+      - filesystem
+      - postgres
+
+  # General missions (fallback)
+  general:
+    required_tools:
+      - write_file
+      - read_file
+    optional_tools:
+      - web_search
+    mcp_servers:
+      - filesystem

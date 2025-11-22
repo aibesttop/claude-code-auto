@@ -116,9 +116,12 @@ class RoleExecutor:
         # Build initial task
         task = self._build_task(mission, context)
 
-        # Mission loop
+        # Mission loop with infinite loop protection
         iteration = 0
         validation = {"passed": False, "errors": []}
+        previous_errors = []  # Track error history to detect loops
+        same_error_count = 0  # Count consecutive identical errors
+        MAX_SAME_ERROR_RETRIES = 2  # Exit after N identical errors
 
         while iteration < max_iterations:
             iteration += 1
@@ -145,6 +148,32 @@ class RoleExecutor:
                 }
             else:
                 logger.warning(f"⚠️ Validation failed: {validation['errors']}")
+
+                # Check for infinite loop: same errors repeating
+                current_errors = sorted(validation['errors'])
+                if previous_errors and current_errors == previous_errors:
+                    same_error_count += 1
+                    logger.warning(f"🔁 Same validation errors detected {same_error_count} times in a row")
+
+                    if same_error_count >= MAX_SAME_ERROR_RETRIES:
+                        logger.error(
+                            f"❌ Breaking infinite loop: Same errors repeated {same_error_count} times. "
+                            f"Errors: {current_errors[:3]}... "
+                            f"Possible causes: validation logic issue, file path problem, or agent unable to fix."
+                        )
+                        return {
+                            "success": False,
+                            "outputs": self._collect_outputs(),
+                            "iterations": iteration,
+                            "validation_result": validation,
+                            "exit_reason": "infinite_loop_detected"
+                        }
+                else:
+                    # Different errors - reset counter
+                    same_error_count = 0
+
+                previous_errors = current_errors
+
                 # Build retry task with specific errors to fix
                 task = self._build_retry_task(validation['errors'])
 
@@ -175,10 +204,13 @@ class RoleExecutor:
         # Build context description
         context_str = self._format_context(context) if context else "No previous context."
 
-        # Mission loop with planning
+        # Mission loop with planning and infinite loop protection
         iteration = 0
         last_result = context_str
         validation = {"passed": False, "errors": []}
+        previous_errors = []  # Track error history to detect loops
+        same_error_count = 0  # Count consecutive identical errors
+        MAX_SAME_ERROR_RETRIES = 2  # Exit after N identical errors
 
         while iteration < max_iterations:
             iteration += 1
@@ -244,6 +276,31 @@ class RoleExecutor:
                 }
             else:
                 logger.info(f"⏳ Validation not yet passed: {validation['errors']}")
+
+                # Check for infinite loop: same errors repeating
+                current_errors = sorted(validation['errors'])
+                if previous_errors and current_errors == previous_errors:
+                    same_error_count += 1
+                    logger.warning(f"🔁 Same validation errors detected {same_error_count} times in a row")
+
+                    if same_error_count >= MAX_SAME_ERROR_RETRIES:
+                        logger.error(
+                            f"❌ Breaking infinite loop in planner mode: Same errors repeated {same_error_count} times. "
+                            f"Errors: {current_errors[:3]}... "
+                        )
+                        return {
+                            "success": False,
+                            "outputs": self._collect_outputs(),
+                            "iterations": iteration,
+                            "validation_result": validation,
+                            "exit_reason": "infinite_loop_detected"
+                        }
+                else:
+                    # Different errors - reset counter
+                    same_error_count = 0
+
+                previous_errors = current_errors
+
                 # Feed validation errors back to planner
                 last_result += f"\n\nValidation errors: {validation['errors']}"
 
@@ -358,18 +415,41 @@ IMPORTANT: Write files to '{self.work_dir}'.
                 if file_path.exists():
                     content = file_path.read_text(encoding='utf-8')
                     for required in rule.must_contain:
-                        # Normalize whitespace for more flexible matching
-                        # Convert multiple spaces/tabs to single space pattern
-                        pattern = re.escape(required)
-                        # Replace escaped spaces with flexible whitespace pattern
-                        pattern = pattern.replace(r'\ ', r'\s+')
+                        # Flexible pattern matching for markdown headers
+                        # Handles variations like "## Header", "##Header", "##  Header"
 
-                        # Search with case-sensitive matching
-                        if not re.search(pattern, content):
-                            errors.append(f"{rule.file} missing section: {required}")
-                            logger.debug(f"Failed to find '{required}' in {rule.file}")
-                            logger.debug(f"Pattern used: {pattern}")
-                            logger.debug(f"File content preview: {content[:500]}")
+                        # Method 1: Try exact match first (fastest)
+                        if required in content:
+                            continue  # Found - skip to next requirement
+
+                        # Method 2: Try flexible whitespace pattern
+                        # Escape special regex chars but preserve structure
+                        pattern = re.escape(required)
+                        # Allow flexible whitespace: 0 or more spaces/tabs
+                        pattern = pattern.replace(r'\ ', r'\s*')
+
+                        # Search with multiline and case-sensitive matching
+                        if re.search(pattern, content, re.MULTILINE):
+                            continue  # Found - skip to next requirement
+
+                        # Method 3: Try normalized comparison (remove extra whitespace)
+                        normalized_required = ' '.join(required.split())
+                        normalized_content = ' '.join(content.split())
+
+                        if normalized_required in normalized_content:
+                            logger.warning(f"Found '{required}' in {rule.file} with whitespace normalization")
+                            continue
+
+                        # Not found - log detailed error
+                        errors.append(f"{rule.file} missing section: {required}")
+                        logger.warning(f"❌ Failed to find '{required}' in {rule.file}")
+                        logger.debug(f"Tried pattern: {pattern}")
+                        logger.debug(f"File content (first 1000 chars):\n{content[:1000]}")
+                        logger.debug(f"File content (headers only):")
+                        # Extract and log all markdown headers for debugging
+                        headers = re.findall(r'^#{1,6}\s+.+$', content, re.MULTILINE)
+                        for h in headers[:20]:  # Limit to first 20 headers
+                            logger.debug(f"  Found header: {h}")
                 else:
                     errors.append(f"Cannot check content, file missing: {rule.file}")
 
