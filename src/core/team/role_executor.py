@@ -36,7 +36,8 @@ class RoleExecutor:
         model: Optional[str] = None,
         timeout_seconds: int = 300,
         permission_mode: str = "bypassPermissions",
-        autonomous_mode: bool = False
+        autonomous_mode: bool = False,
+        team_goal: Optional[str] = None
     ):
         """
         Initialize the role executor.
@@ -51,6 +52,7 @@ class RoleExecutor:
             timeout_seconds: Timeout for planner calls
             permission_mode: Permission mode for planner
             autonomous_mode: Use v1.0 autonomous loop (AI judgment instead of validation rules)
+            team_goal: Overall team goal that provides context for this role's work
         """
         self.role = role
         self.executor = executor_agent
@@ -58,6 +60,7 @@ class RoleExecutor:
         self.session_id = session_id or "unknown"
         self.use_planner = use_planner
         self.autonomous_mode = autonomous_mode
+        self.team_goal = team_goal  # Store team goal for AI-native team collaboration
 
         # Initialize optimized validator with caching
         self.validator = OptimizedValidator()
@@ -501,13 +504,33 @@ Please implement the suggested improvements.
         context_str = self._format_context(context) if context else "No previous context."
         criteria_str = "\n".join(f"- {c}" for c in mission.success_criteria)
         required_files_str = "\n".join(f"- {f}" for f in self.role.output_standard.required_files)
-        
+
         template_info = ""
         if self.role.output_standard.template:
             template_info = f"\n\nYou MUST follow the standard defined in: {self.role.output_standard.template}"
-        
+
+        # Build team goal section (AI-native team collaboration)
+        team_goal_section = ""
+        if self.team_goal:
+            team_goal_section = f"""
+{'='*80}
+🎯 TEAM GOAL (CRITICAL - ALL WORK MUST ALIGN WITH THIS)
+{'='*80}
+
+{self.team_goal}
+
+⚠️ CRITICAL CONSTRAINT:
+- ALL your research, analysis, and deliverables MUST focus on the above team goal
+- DO NOT deviate to other topics or domains
+- Your specific mission below is a component of achieving this team goal
+- Everything you produce must directly contribute to this overall objective
+
+{'='*80}
+
+"""
+
         return f"""
-# Mission: {mission.goal}
+{team_goal_section}# Mission: {mission.goal}
 
 ## Success Criteria
 {criteria_str}

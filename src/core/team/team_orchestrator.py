@@ -89,7 +89,8 @@ class TeamOrchestrator:
                 role=role,
                 executor_agent=self.executor,
                 work_dir=self.work_dir,
-                autonomous_mode=self.autonomous_mode  # v1.0 soul: AI judgment
+                autonomous_mode=self.autonomous_mode,  # v1.0 soul: AI judgment
+                team_goal=goal  # AI-native team: pass overall goal to each role
             )
 
             # Execute role mission (small loop)
