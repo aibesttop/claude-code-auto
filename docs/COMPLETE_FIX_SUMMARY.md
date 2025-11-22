@@ -1,8 +1,8 @@
 # 完整修复总结 - Team Mode架构问题
 
-**日期**: 2025-11-23
+**日期**: 2025-11-23（最后更新）
 **会话**: claude/analyze-team-mode-arch-01JanBjCSpd4W6FerwfaFFq6
-**状态**: ✅ 全部修复完成
+**状态**: ✅ 全部修复完成（5个核心问题 + 1个文档位置锁定）
 
 ---
 
@@ -124,6 +124,58 @@
 
 ---
 
+### 问题 5: 文档生成和查询位置不一致 - CWD问题 ✅
+
+**提出时间**: 第四轮对话（用户关键反馈！）
+**问题描述**: 验证失败"Missing required file"，虽然Agent声称已创建文件
+
+**用户要求**: "但凡生成的文档和需要查询文档的地址，都需要锁死在相同的位置"
+
+**根本原因**:
+- Agent被告知使用相对路径（如"filename.md"）
+- 工具`write_file`使用`Path(path)`，相对于**进程CWD**
+- 但进程CWD ≠ work_dir（demo_act）
+- 文件被写到项目根目录，而非work_dir
+- 验证器在work_dir中查找，找不到文件
+
+**问题链**:
+```
+1. Agent收到指令：使用相对路径"filename.md"
+2. Agent调用：write_file("filename.md", content)
+3. write_file执行：Path("filename.md") → 相对于CWD（如/project/root）
+4. 文件创建位置：/project/root/filename.md ❌
+5. 验证器查找位置：/project/root/demo_act/filename.md ❌
+6. 结果：找不到文件！
+```
+
+**修复方案**:
+在ExecutorAgent执行任务时，切换进程工作目录到work_dir：
+
+```python
+# 执行前
+original_cwd = os.getcwd()
+os.chdir(work_dir_path)  # 切换到demo_act
+
+try:
+    # 执行任务（所有相对路径操作都相对于demo_act）
+    ...
+finally:
+    # 恢复原CWD
+    os.chdir(original_cwd)
+```
+
+**效果**:
+- 文档生成位置：work_dir（demo_act）✅
+- 文档查询位置：work_dir（demo_act）✅
+- 完全一致！✅
+
+**修改文件**:
+- `src/core/agents/executor.py`: 添加os.chdir切换逻辑
+
+**Commit**: `fbbb9f8`
+
+---
+
 ## 📈 修复时间线
 
 ```
@@ -132,11 +184,13 @@
 ├─ Commit 2: 80b69d8 - 添加团队协作分析与问题修复报告
 ├─ Commit 3: 77e40d2 - 修复主题偏离问题
 └─ 2025-11-23
-   └─ Commit 4: 9a5e06d - 修复SubMission缺少max_iterations属性
+   ├─ Commit 4: 9a5e06d - 修复SubMission缺少max_iterations属性
+   ├─ Commit 5: e1e08ff - 添加完整修复总结文档
+   └─ Commit 6: fbbb9f8 - 锁定文档生成和查询位置一致性（CWD修复）
 ```
 
 **Branch**: `claude/analyze-team-mode-arch-01JanBjCSpd4W6FerwfaFFq6`
-**Status**: ✅ All commits pushed
+**Status**: ✅ All commits pushed（6个commits）
 
 ---
 
@@ -222,14 +276,19 @@ python diagnose_mission_decomposition.py
 
 ## 🎉 总结
 
-### 发现的问题
-1. ✅ 文件路径指令冲突
-2. ✅ 主题偏离（最关键）
-3. ✅ SubMission缺少max_iterations
+### 发现并修复的问题
+1. ✅ 团队协作验证（共同goal + 输出访问）
+2. ✅ 文件路径指令冲突（相对 vs 绝对路径）
+3. ✅ **主题偏离**（最关键！AI agents vs 漫画市场）
+4. ✅ SubMission缺少max_iterations属性
+5. ✅ **文档生成和查询位置不一致**（CWD问题）
 
 ### 修复效果
-- **代码质量**: 解决了3个影响系统运行的Bug
-- **用户体验**: AI员工现在能够准确理解和执行用户意图
+- **代码质量**: 解决了5个影响系统运行的核心Bug
+- **用户体验**: AI员工现在能够：
+  - 准确理解用户指定的领域/主题
+  - 将文件创建在正确位置
+  - 成功通过验证
 - **可维护性**: 添加了诊断工具和详细文档
 - **架构完整度**: 从85%提升到**95%+**（P0和P1全部完成）
 
@@ -237,6 +296,7 @@ python diagnose_mission_decomposition.py
 1. **主题一致性**: 通过改进Prompt和Context传递，确保所有SubMissions紧扣用户主题
 2. **路径规范**: 统一文件路径指令，避免混淆
 3. **属性完整**: SubMission现在具备执行所需的所有属性
+4. **位置锁定**: 通过os.chdir确保文档生成和查询位置完全一致（用户要求）
 
 ---
 
