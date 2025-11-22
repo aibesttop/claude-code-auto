@@ -21,6 +21,34 @@ class ValidationRule(BaseModel):
     must_contain: Optional[List[str]] = None
     forbidden_patterns: Optional[List[str]] = None
     min_chars: Optional[int] = None
+    # Adaptive validation (v3.1)
+    base_chars: Optional[int] = None  # Base value for adaptive min_length
+    adaptive: bool = Field(default=False, description="Enable adaptive adjustment based on complexity")
+
+    def get_effective_min_chars(self, task_complexity: str = "medium") -> int:
+        """
+        Calculate effective minimum character count based on task complexity.
+
+        Args:
+            task_complexity: Task complexity level (simple, medium, complex, expert)
+
+        Returns:
+            Effective minimum character count
+        """
+        if not self.adaptive or self.base_chars is None:
+            # Non-adaptive or no base value: use static min_chars
+            return self.min_chars if self.min_chars is not None else 0
+
+        # Complexity multipliers
+        multipliers = {
+            "simple": 0.7,
+            "medium": 1.0,
+            "complex": 1.5,
+            "expert": 2.0
+        }
+
+        multiplier = multipliers.get(task_complexity, 1.0)
+        return int(self.base_chars * multiplier)
 
 
 class Mission(BaseModel):
@@ -47,6 +75,9 @@ class Role(BaseModel):
     recommended_persona: Optional[str] = None
     tools: List[str] = Field(default_factory=list)
     dependencies: List[str] = Field(default_factory=list)
+    # Quality validation (v3.1)
+    enable_quality_check: bool = Field(default=False, description="Enable semantic quality validation")
+    quality_threshold: float = Field(default=70.0, ge=0, le=100, description="Minimum quality score (0-100)")
 
 
 class RoleRegistry:

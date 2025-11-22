@@ -88,6 +88,14 @@ class ResearchConfig(BaseModel):
     enabled: bool = Field(default=True, description="Enable research agent features")
 
 
+class CostControlConfig(BaseModel):
+    """Cost budget control configuration"""
+    enabled: bool = Field(default=False, description="Enable cost control")
+    max_budget_usd: float = Field(default=10.0, ge=0, description="Maximum budget in USD")
+    warning_threshold: float = Field(default=0.8, ge=0, le=1, description="Warning threshold (0-1)")
+    auto_stop_on_exceed: bool = Field(default=True, description="Auto stop when budget exceeded")
+
+
 class WorkflowConfig(BaseModel):
     directories: DirectoriesConfig
     task: TaskConfig
@@ -101,6 +109,7 @@ class WorkflowConfig(BaseModel):
     persona: PersonaConfig = Field(default_factory=PersonaConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     research: ResearchConfig = Field(default_factory=ResearchConfig)
+    cost_control: CostControlConfig = Field(default_factory=CostControlConfig)
 
     @field_validator('directories')
     def validate_directories(cls, v):

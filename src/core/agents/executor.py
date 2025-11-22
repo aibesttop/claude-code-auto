@@ -5,6 +5,8 @@ Executes specific sub-tasks using the ReAct pattern.
 import json
 import re
 from typing import Dict, Any, Tuple, Optional
+from pathlib import Path
+from datetime import datetime
 
 from src.utils.logger import get_logger
 from src.core.tool_registry import registry
@@ -64,6 +66,10 @@ class ExecutorAgent:
         self.permission_mode = permission_mode
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+
+        # Trace tracking
+        self.current_task = None
+        self.react_history = []
         
     def set_persona(self, persona_name: str):
         """Sets the persona for the agent"""
@@ -115,13 +121,17 @@ class ExecutorAgent:
     async def execute_task(self, task_description: str) -> str:
         """Executes a single sub-task"""
         logger.info(f"🤖 Executor started task: {task_description}")
-        
+
+        # Record for trace
+        self.current_task = task_description
+        self.react_history = []
+
         tool_desc = self._get_tool_descriptions()
-        
+
         persona_prompt = self.persona_engine.get_system_prompt()
         base_system_prompt = REACT_SYSTEM_PROMPT.format(tool_descriptions=tool_desc)
         full_system_prompt = f"{persona_prompt}\n\n{base_system_prompt}"
-        
+
         history = [
             f"System: {full_system_prompt}",
             f"Task: {task_description}"
@@ -144,10 +154,14 @@ class ExecutorAgent:
                     max_retries=self.max_retries,
                     retry_delay=self.retry_delay,
                 )
+
+                # Record for trace
+                self.react_history.append(response_text)
+
             except Exception as exc:  # pylint: disable=broad-except
                 logger.error(f"Executor Claude query failed: {exc}")
                 return f"Error: {exc}"
-                
+
             logger.debug(f"Claude Response:\n{response_text}")
             
             if "Final Answer:" in response_text:
@@ -184,3 +198,65 @@ class ExecutorAgent:
                     current_prompt = "\n\n".join(history)
 
         return "Error: Max steps reached without completion."
+
+    def export_react_trace(
+        self,
+        session_id: str,
+        role_name: str = "Executor",
+        step: int = 1
+    ) -> Optional[str]:
+        """
+        Export ReAct execution history to markdown trace file.
+        
+        Args:
+            session_id: Current session ID
+            role_name: Name of the role
+            step: Step number
+            
+        Returns:
+            Path to trace file or None
+        """
+        try:
+            trace_dir = Path("logs/trace")
+            trace_dir.mkdir(parents=True, exist_ok=True)
+            
+            filename = f"{session_id}_{role_name}_executor_step{step}.md"
+            trace_path = trace_dir / filename
+            
+            content = [
+                f"# {role_name} - Executor Step {step} Trace",
+                "",
+                f"**Timestamp**: {datetime.now().isoformat()}",
+                f"**Session**: {session_id}",
+                "",
+                "---",
+                "",
+                "## Task",
+                f"```",
+                str(self.current_task) if self.current_task else "N/A",
+                "```",
+                "",
+                "## ReAct History",
+                ""
+            ]
+            
+            if self.react_history:
+                for i, entry in enumerate(self.react_history, 1):
+                    content.append(f"### Step {i}")
+                    content.append("```")
+                    content.append(str(entry)[:500] if len(str(entry)) > 500 else str(entry))
+                    if len(str(entry)) > 500:
+                        content.append("...")
+                    content.append("```")
+                    content.append("")
+            else:
+                content.append("No execution history recorded.")
+                content.append("")
+            
+            trace_path.write_text("\n".join(content), encoding='utf-8')
+            logger.info(f"📝 Executor trace exported: {trace_path}")
+            return str(trace_path)
+            
+        except Exception as e:
+            logger.error(f"Failed to export executor trace: {e}")
+            return None

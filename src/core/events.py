@@ -155,8 +155,18 @@ class CostTracker:
         }
     }
 
-    def __init__(self):
+    def __init__(self, max_budget_usd: Optional[float] = None, warning_threshold: float = 0.8):
+        """
+        Initialize cost tracker with optional budget control.
+
+        Args:
+            max_budget_usd: Maximum budget in USD (None for unlimited)
+            warning_threshold: Warning threshold as fraction of budget (0-1)
+        """
         self.records: List[CostRecord] = []
+        self.max_budget_usd = max_budget_usd
+        self.warning_threshold = warning_threshold
+        self._warning_triggered = False
 
     def calculate_cost(self, model: str, token_usage: TokenUsage) -> float:
         """计算API调用成本"""
@@ -251,6 +261,69 @@ class CostTracker:
             "agent_breakdown": agent_breakdown,
             "records": [r.to_dict() for r in session_records]
         }
+
+    def check_budget(self, session_id: str) -> Dict[str, Any]:
+        """
+        Check budget status for a session.
+
+        Returns:
+            {
+                "budget_enabled": bool,
+                "total_cost": float,
+                "max_budget": float,
+                "usage_ratio": float,  # 0-1
+                "warning_triggered": bool,
+                "budget_exceeded": bool,
+                "remaining_budget": float
+            }
+        """
+        if self.max_budget_usd is None:
+            return {
+                "budget_enabled": False,
+                "total_cost": self.get_session_cost(session_id),
+                "max_budget": None,
+                "usage_ratio": 0.0,
+                "warning_triggered": False,
+                "budget_exceeded": False,
+                "remaining_budget": float('inf')
+            }
+
+        total_cost = self.get_session_cost(session_id)
+        usage_ratio = total_cost / self.max_budget_usd if self.max_budget_usd > 0 else 0.0
+        budget_exceeded = total_cost >= self.max_budget_usd
+        warning_triggered = usage_ratio >= self.warning_threshold
+
+        if warning_triggered and not self._warning_triggered:
+            self._warning_triggered = True
+
+        return {
+            "budget_enabled": True,
+            "total_cost": round(total_cost, 4),
+            "max_budget": self.max_budget_usd,
+            "usage_ratio": round(usage_ratio, 3),
+            "warning_triggered": warning_triggered,
+            "budget_exceeded": budget_exceeded,
+            "remaining_budget": round(max(0, self.max_budget_usd - total_cost), 4)
+        }
+
+    def is_budget_exceeded(self, session_id: str) -> bool:
+        """Check if budget has been exceeded."""
+        budget_status = self.check_budget(session_id)
+        return budget_status["budget_exceeded"]
+
+    def get_budget_status_message(self, session_id: str) -> str:
+        """Get human-readable budget status message."""
+        status = self.check_budget(session_id)
+
+        if not status["budget_enabled"]:
+            return f"💰 Cost tracking: ${status['total_cost']:.4f} (no budget limit)"
+
+        if status["budget_exceeded"]:
+            return f"🚨 BUDGET EXCEEDED: ${status['total_cost']:.4f} / ${status['max_budget']:.2f} ({status['usage_ratio']:.1%})"
+        elif status["warning_triggered"]:
+            return f"⚠️ Budget warning: ${status['total_cost']:.4f} / ${status['max_budget']:.2f} ({status['usage_ratio']:.1%})"
+        else:
+            return f"💰 Budget: ${status['total_cost']:.4f} / ${status['max_budget']:.2f} ({status['usage_ratio']:.1%})"
 
 
 class EventStore:

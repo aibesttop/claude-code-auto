@@ -82,3 +82,10 @@ observability:
 research:
   provider: "tavily"
   enabled: true
+
+# Cost control
+cost_control:
+  enabled: false
+  max_budget_usd: 10.0
+  warning_threshold: 0.8
+  auto_stop_on_exceed: true
