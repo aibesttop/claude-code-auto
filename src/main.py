@@ -202,8 +202,17 @@ async def main(config_path: str = "config.yaml"):
 
     # Initialize event store and cost tracker
     event_store = EventStore(storage_dir=str(Path(config.directories.logs_dir) / "events"))
-    cost_tracker = CostTracker()
-    logger.info("📊 Event store and cost tracker initialized")
+
+    # Initialize cost tracker with budget control
+    if config.cost_control.enabled:
+        cost_tracker = CostTracker(
+            max_budget_usd=config.cost_control.max_budget_usd,
+            warning_threshold=config.cost_control.warning_threshold
+        )
+        logger.info(f"📊 Event store and cost tracker initialized with budget: ${config.cost_control.max_budget_usd:.2f}")
+    else:
+        cost_tracker = CostTracker()
+        logger.info("📊 Event store and cost tracker initialized (no budget limit)")
 
     # SDK connectivity health check before creating agents
     if not await _sdk_health_check(
@@ -528,6 +537,36 @@ async def main(config_path: str = "config.yaml"):
             state_manager.save()
             logger.log_cost(iteration, session_id, iteration_duration, cost=cost_record.estimated_cost_usd)
             continuous_errors = 0
+
+            # Budget check
+            if config.cost_control.enabled:
+                budget_status = cost_tracker.check_budget(session_id)
+                budget_message = cost_tracker.get_budget_status_message(session_id)
+                logger.info(budget_message)
+
+                # Log budget warning event
+                if budget_status["warning_triggered"] and not budget_status["budget_exceeded"]:
+                    event_store.create_event(
+                        EventType.API_CALL,
+                        session_id=session_id,
+                        iteration=iteration,
+                        budget_warning=True,
+                        usage_ratio=budget_status["usage_ratio"]
+                    )
+
+                # Budget exceeded - stop if auto_stop enabled
+                if budget_status["budget_exceeded"] and config.cost_control.auto_stop_on_exceed:
+                    logger.error(f"🚨 Budget exceeded! Stopping workflow. Total cost: ${budget_status['total_cost']:.4f}")
+                    state.status = WorkflowStatus.FAILED
+                    state_manager.save()
+                    event_store.create_event(
+                        EventType.EMERGENCY_STOP,
+                        session_id=session_id,
+                        iteration=iteration,
+                        reason="budget_exceeded",
+                        total_cost=budget_status["total_cost"]
+                    )
+                    break
 
             event_store.create_event(
                 EventType.ITERATION_END,
