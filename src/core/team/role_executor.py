@@ -54,6 +54,10 @@ class RoleExecutor:
         self.session_id = session_id or "unknown"
         self.use_planner = use_planner
 
+        # Estimate task complexity for adaptive validation
+        self.task_complexity = self._estimate_task_complexity(role.mission.goal)
+        logger.info(f"Estimated task complexity: {self.task_complexity}")
+
         # Initialize Planner if requested
         self.planner = None
         if use_planner:
@@ -377,8 +381,15 @@ Do NOT regenerate everything, just fix the specific issues.
                 file_path = self.work_dir / rule.file
                 if file_path.exists():
                     content = file_path.read_text(encoding='utf-8')
-                    if len(content) < rule.min_chars:
-                        errors.append(f"{rule.file} too short: {len(content)} < {rule.min_chars} chars")
+
+                    # Use adaptive min_chars based on task complexity
+                    effective_min_chars = rule.get_effective_min_chars(self.task_complexity)
+
+                    if len(content) < effective_min_chars:
+                        complexity_info = f" [complexity: {self.task_complexity}]" if rule.adaptive else ""
+                        errors.append(
+                            f"{rule.file} too short: {len(content)} < {effective_min_chars} chars{complexity_info}"
+                        )
 
         return errors
 
@@ -515,3 +526,53 @@ Do NOT regenerate everything, just fix the specific issues.
         except Exception as e:
             logger.error(f"Failed to save context to trace: {e}")
             return "trace_save_failed"
+
+    def _estimate_task_complexity(self, goal: str) -> str:
+        """
+        Estimate task complexity based on goal description.
+
+        Complexity levels:
+        - simple: Quick, basic tasks
+        - medium: Standard tasks (default)
+        - complex: Comprehensive, detailed tasks
+        - expert: Advanced, sophisticated tasks
+
+        Args:
+            goal: Task goal description
+
+        Returns:
+            Complexity level string
+        """
+        goal_lower = goal.lower()
+
+        # Method 1: Keyword matching (high priority)
+        simple_keywords = ["simple", "quick", "basic", "brief", "short"]
+        complex_keywords = ["comprehensive", "detailed", "in-depth", "thorough", "extensive"]
+        expert_keywords = ["expert", "advanced", "sophisticated", "cutting-edge", "state-of-the-art"]
+
+        if any(word in goal_lower for word in expert_keywords):
+            return "expert"
+
+        if any(word in goal_lower for word in complex_keywords):
+            return "complex"
+
+        if any(word in goal_lower for word in simple_keywords):
+            return "simple"
+
+        # Method 2: Length-based heuristic
+        if len(goal) < 100:
+            return "simple"
+
+        if len(goal) > 500:
+            return "complex"
+
+        # Method 3: Success criteria count (if available)
+        if hasattr(self, 'role') and self.role.mission.success_criteria:
+            criteria_count = len(self.role.mission.success_criteria)
+            if criteria_count >= 5:
+                return "complex"
+            elif criteria_count <= 2:
+                return "simple"
+
+        # Default
+        return "medium"
