@@ -3,6 +3,7 @@ Executor Agent (ReAct Engine)
 Executes specific sub-tasks using the ReAct pattern.
 """
 import json
+import os
 import re
 from typing import Dict, Any, Tuple, Optional
 from pathlib import Path
@@ -189,7 +190,16 @@ class ExecutorAgent:
                 logger.info(f"🛠️ Calling Tool: {action}")
                 result = None
                 try:
-                    result = registry.execute(action, args)
+                    # Change to work directory before executing tool
+                    # This ensures relative paths in tools are resolved correctly
+                    original_cwd = os.getcwd()
+                    try:
+                        os.chdir(work_dir_path)
+                        result = registry.execute(action, args)
+                    finally:
+                        # Always restore original directory
+                        os.chdir(original_cwd)
+
                     observation = f"\nObservation: {result}\n"
                 except Exception as e:  # pylint: disable=broad-except
                     observation = f"\nObservation: Error executing tool: {str(e)}\n"
