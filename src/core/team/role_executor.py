@@ -4,10 +4,11 @@ Role Executor
 Executes a single role's mission with validation loop.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from pathlib import Path
 from src.core.team.role_registry import Role, ValidationRule
 from src.core.agents.executor import ExecutorAgent
+from src.core.agents.planner import PlannerAgent
 import logging
 import re
 
@@ -26,20 +27,44 @@ class RoleExecutor:
         self,
         role: Role,
         executor_agent: ExecutorAgent,
-        work_dir: str
+        work_dir: str,
+        session_id: Optional[str] = None,
+        use_planner: bool = False,
+        model: Optional[str] = None,
+        timeout_seconds: int = 300,
+        permission_mode: str = "bypassPermissions"
     ):
         """
         Initialize the role executor.
-        
+
         Args:
             role: Role definition
             executor_agent: Existing ExecutorAgent instance
             work_dir: Working directory
+            session_id: Session ID for trace logging
+            use_planner: Whether to use PlannerAgent for sub-task decomposition
+            model: Model to use for planner (if use_planner=True)
+            timeout_seconds: Timeout for planner calls
+            permission_mode: Permission mode for planner
         """
         self.role = role
         self.executor = executor_agent
         self.work_dir = Path(work_dir)
-        
+        self.session_id = session_id or "unknown"
+        self.use_planner = use_planner
+
+        # Initialize Planner if requested
+        self.planner = None
+        if use_planner:
+            self.planner = PlannerAgent(
+                work_dir=work_dir,
+                goal=role.mission.goal,
+                model=model,
+                timeout_seconds=timeout_seconds,
+                permission_mode=permission_mode
+            )
+            logger.info(f"Initialized PlannerAgent for role: {self.role.name}")
+
         # Switch to recommended Persona
         if self.role.recommended_persona:
             self.executor.persona_engine.switch_persona(
@@ -50,11 +75,11 @@ class RoleExecutor:
     
     async def execute(self, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """
-        Execute role's mission.
-        
+        Execute role's mission (with optional planner integration).
+
         Args:
             context: Outputs from previous roles
-        
+
         Returns:
             {
                 "success": bool,
@@ -63,22 +88,37 @@ class RoleExecutor:
                 "validation_result": Dict
             }
         """
+        if self.use_planner and self.planner:
+            return await self._execute_with_planner(context)
+        else:
+            return await self._execute_direct(context)
+
+    async def _execute_direct(self, context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        Execute role's mission directly (original behavior).
+
+        Args:
+            context: Outputs from previous roles
+
+        Returns:
+            Execution result dictionary
+        """
         mission = self.role.mission
         max_iterations = mission.max_iterations
-        
+
         logger.info(f"🎭 {self.role.name} starting mission: {mission.goal}")
-        
+
         # Build initial task
         task = self._build_task(mission, context)
-        
+
         # Mission loop
         iteration = 0
         validation = {"passed": False, "errors": []}
-        
+
         while iteration < max_iterations:
             iteration += 1
             logger.info(f"  Iteration {iteration}/{max_iterations}")
-            
+
             # Execute task using existing Executor
             try:
                 result = await self.executor.execute_task(task)
@@ -86,10 +126,10 @@ class RoleExecutor:
                 logger.error(f"Executor failed: {e}")
                 task = f"Previous attempt failed with error: {e}\n\nPlease try again and fix the issue.\n\n{task}"
                 continue
-            
+
             # Validate outputs
             validation = self._validate_outputs()
-            
+
             if validation['passed']:
                 logger.info(f"✅ {self.role.name} mission completed!")
                 return {
@@ -102,9 +142,119 @@ class RoleExecutor:
                 logger.warning(f"⚠️ Validation failed: {validation['errors']}")
                 # Build retry task with specific errors to fix
                 task = self._build_retry_task(validation['errors'])
-        
+
         # Max iterations reached
         logger.error(f"❌ {self.role.name} failed to complete mission in {max_iterations} iterations")
+        return {
+            "success": False,
+            "outputs": self._collect_outputs(),
+            "iterations": iteration,
+            "validation_result": validation
+        }
+
+    async def _execute_with_planner(self, context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        Execute role's mission with planning decomposition.
+
+        Args:
+            context: Outputs from previous roles
+
+        Returns:
+            Execution result dictionary
+        """
+        mission = self.role.mission
+        max_iterations = mission.max_iterations
+
+        logger.info(f"🎭 {self.role.name} starting mission with planner: {mission.goal}")
+
+        # Build context description
+        context_str = self._format_context(context) if context else "No previous context."
+
+        # Mission loop with planning
+        iteration = 0
+        last_result = context_str
+        validation = {"passed": False, "errors": []}
+
+        while iteration < max_iterations:
+            iteration += 1
+            logger.info(f"  Planning iteration {iteration}/{max_iterations}")
+
+            # 1. Planning phase - get next sub-task
+            try:
+                next_task = await self.planner.get_next_step(last_result)
+            except Exception as e:
+                logger.error(f"Planner failed: {e}")
+                break
+
+            # Export plan trace
+            try:
+                trace_file = self.planner.export_plan_to_markdown(
+                    session_id=self.session_id,
+                    role_name=self.role.name,
+                    step=iteration
+                )
+                logger.info(f"📝 Plan trace exported: {trace_file}")
+            except Exception as e:
+                logger.warning(f"Failed to export plan trace: {e}")
+
+            # Check if planning is complete
+            if not next_task:
+                logger.info("📋 Planner indicates all tasks complete")
+                break
+
+            logger.info(f"📋 Planner next task: {next_task}")
+
+            # 2. Execution phase
+            try:
+                result = await self.executor.execute_task(next_task)
+                last_result = f"Task: {next_task}\nResult: {result}"
+                logger.info(f"Execution result: {result[:200]}...")
+
+                # Export executor trace
+                try:
+                    exec_trace = self.executor.export_react_trace(
+                        session_id=self.session_id,
+                        role_name=self.role.name,
+                        step=iteration
+                    )
+                    logger.info(f"📝 ReAct trace exported: {exec_trace}")
+                except Exception as e:
+                    logger.warning(f"Failed to export ReAct trace: {e}")
+
+            except Exception as e:
+                logger.error(f"Executor failed: {e}")
+                last_result = f"Task: {next_task}\nFailed with error: {e}"
+                continue
+
+            # 3. Validation phase
+            validation = self._validate_outputs()
+
+            if validation['passed']:
+                logger.info(f"✅ {self.role.name} mission completed with planner!")
+                return {
+                    "success": True,
+                    "outputs": self._collect_outputs(),
+                    "iterations": iteration,
+                    "validation_result": validation
+                }
+            else:
+                logger.info(f"⏳ Validation not yet passed: {validation['errors']}")
+                # Feed validation errors back to planner
+                last_result += f"\n\nValidation errors: {validation['errors']}"
+
+        # Check final validation state
+        validation = self._validate_outputs()
+        if validation['passed']:
+            logger.info(f"✅ {self.role.name} mission completed!")
+            return {
+                "success": True,
+                "outputs": self._collect_outputs(),
+                "iterations": iteration,
+                "validation_result": validation
+            }
+
+        # Max iterations reached or planner stopped
+        logger.error(f"❌ {self.role.name} failed to complete mission in {iteration} iterations")
         return {
             "success": False,
             "outputs": self._collect_outputs(),
