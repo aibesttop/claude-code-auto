@@ -89,3 +89,11 @@ cost_control:
   max_budget_usd: 10.0
   warning_threshold: 0.8
   auto_stop_on_exceed: true
+
+# Leader Agent (v4.0) - Dynamic orchestration
+leader:
+  enabled: false  # Set to true to enable Leader mode
+  max_mission_retries: 3
+  quality_threshold: 70.0
+  enable_intervention: true
+  resource_config_dir: "resources"

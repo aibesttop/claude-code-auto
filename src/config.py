@@ -96,6 +96,15 @@ class CostControlConfig(BaseModel):
     auto_stop_on_exceed: bool = Field(default=True, description="Auto stop when budget exceeded")
 
 
+class LeaderConfig(BaseModel):
+    """Leader Agent configuration (v4.0)"""
+    enabled: bool = Field(default=False, description="Enable Leader mode (dynamic orchestration)")
+    max_mission_retries: int = Field(default=3, ge=1, le=10, description="Max retries per mission")
+    quality_threshold: float = Field(default=70.0, ge=0, le=100, description="Minimum quality score (0-100)")
+    enable_intervention: bool = Field(default=True, description="Enable intelligent intervention")
+    resource_config_dir: str = Field(default="resources", description="Resource configuration directory")
+
+
 class WorkflowConfig(BaseModel):
     directories: DirectoriesConfig
     task: TaskConfig
@@ -110,6 +119,7 @@ class WorkflowConfig(BaseModel):
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     research: ResearchConfig = Field(default_factory=ResearchConfig)
     cost_control: CostControlConfig = Field(default_factory=CostControlConfig)
+    leader: LeaderConfig = Field(default_factory=LeaderConfig)
 
     @field_validator('directories')
     def validate_directories(cls, v):

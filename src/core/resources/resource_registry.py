@@ -3,7 +3,7 @@ Resource Registry - Centralized management of MCP servers, tools, and skills.
 
 Manages all available resources for dynamic injection into roles.
 """
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from dataclasses import dataclass, field
 from pathlib import Path
 import yaml
