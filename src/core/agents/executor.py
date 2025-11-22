@@ -141,7 +141,9 @@ class ExecutorAgent:
         base_system_prompt = REACT_SYSTEM_PROMPT.format(tool_descriptions=tool_desc)
 
         # Add work directory instruction to system prompt
-        work_dir_instruction = f"\n\n## Working Directory\nAll file operations should use paths relative to or within: {work_dir_path}\nWhen using write_file or read_file, use paths like '{work_dir_path}/filename.md'"
+        # IMPORTANT: Use forward slashes for JSON compatibility
+        work_dir_str = str(work_dir_path).replace('\\', '/')
+        work_dir_instruction = f"\n\n## Working Directory\nAll file operations should use paths relative to: {self.work_dir}\nWhen using write_file or read_file, use RELATIVE paths like 'filename.md' or 'subdir/filename.md'\nDO NOT use absolute paths. Always use forward slashes (/) in paths for JSON compatibility."
         full_system_prompt = f"{persona_prompt}\n\n{base_system_prompt}{work_dir_instruction}"
 
         history = [
