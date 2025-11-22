@@ -5,18 +5,20 @@ Wraps ResearcherAgent as callable tools for role execution.
 Provides deep_research and quick_research functions.
 """
 import asyncio
-from typing import Dict, Optional
+from typing import Dict, Optional, TYPE_CHECKING
 from src.core.tool_registry import tool
-from src.core.agents.researcher import ResearcherAgent
 from src.utils.logger import get_logger
+
+if TYPE_CHECKING:
+    from src.core.agents.researcher import ResearcherAgent
 
 logger = get_logger()
 
 # Global singleton to avoid repeated initialization
-_researcher_instance: Optional[ResearcherAgent] = None
+_researcher_instance: Optional["ResearcherAgent"] = None
 
 
-def get_researcher() -> ResearcherAgent:
+def get_researcher() -> "ResearcherAgent":
     """
     Get or create the global ResearcherAgent instance.
 
@@ -25,6 +27,9 @@ def get_researcher() -> ResearcherAgent:
     """
     global _researcher_instance
     if _researcher_instance is None:
+        # Lazy import to avoid circular dependency
+        from src.core.agents.researcher import ResearcherAgent
+
         logger.info("Initializing global ResearcherAgent instance")
         _researcher_instance = ResearcherAgent(
             work_dir=".",
