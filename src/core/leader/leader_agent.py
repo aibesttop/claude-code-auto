@@ -277,11 +277,33 @@ class LeaderAgent:
             except Exception:
                 logger.warning(f"Role '{role_name}' not found, using Market-Researcher as fallback")
                 role = self.role_registry.get_role("Market-Researcher")
-            
+
             # Update role's mission
             role.mission = mission
-            
+
             logger.info(f"   👤 Selected role: {role.name}")
+
+            # 1.5 Resource Injection: Get tools and skills for this mission type
+            logger.info(f"   🔧 Injecting resources for mission type: {mission.type}")
+
+            # Get required tools for mission type
+            required_tools = self.resource_registry.get_tools_for_mission(mission.type)
+            if required_tools:
+                logger.info(f"      Tools: {', '.join(required_tools)}")
+            else:
+                logger.info(f"      Tools: (default - no specific restriction)")
+
+            # Get MCP servers for mission type
+            mcp_servers = self.resource_registry.get_mcp_for_mission(mission.type)
+            if mcp_servers:
+                logger.info(f"      MCP Servers: {', '.join(s.name for s in mcp_servers)}")
+
+            # Get skill prompts for role category
+            skill_prompt = self.resource_registry.get_skill_for_role(role.category)
+            if skill_prompt:
+                logger.info(f"      Skill: {skill_prompt.name}")
+            else:
+                logger.info(f"      Skill: (none for category '{role.category}')")
 
             # 2. Create executor with role's configuration
             executor = ExecutorAgent(
@@ -291,14 +313,16 @@ class LeaderAgent:
                 permission_mode="bypassPermissions"
             )
 
-            # 3. Create role executor
+            # 3. Create role executor with resource injection
             role_executor = RoleExecutor(
                 role=role,
                 executor_agent=executor,
                 work_dir=str(self.work_dir),
                 session_id=self.context.session_id,
                 use_planner=True,  # Enable planner for better task decomposition
-                model=self.model
+                model=self.model,
+                skill_prompt=skill_prompt.prompt if skill_prompt else None,
+                allowed_tools=required_tools if required_tools else None
             )
 
             # 4. Execute role's mission
@@ -346,9 +370,14 @@ class LeaderAgent:
                 continue
 
             elif decision.action == InterventionAction.ENHANCE:
-                logger.info(f"   ⚡ Enhancing and retrying...")
-                # Apply enhancements (modify mission or provide hints)
-                # For now, just retry with same mission
+                logger.info(f"   ⚡ Enhancing task requirements...")
+                # Enhance mission with LLM-driven refinement
+                quality_issues = result.get('validation_result', {}).get('errors', [])
+                enhanced_mission = await self._enhance_mission(mission, quality_issues)
+                # Replace the mission with enhanced version
+                mission = enhanced_mission
+                role.mission = enhanced_mission
+                logger.info(f"      Enhanced goal: {enhanced_mission.goal[:100]}...")
                 continue
 
             elif decision.action == InterventionAction.ESCALATE:
@@ -438,6 +467,105 @@ class LeaderAgent:
             reason="Mission completed successfully"
         )
 
+    async def _enhance_mission(
+        self,
+        mission: SubMission,
+        quality_issues: List[str]
+    ) -> SubMission:
+        """
+        Enhance mission using LLM to refine requirements based on quality issues.
+
+        Args:
+            mission: Original mission
+            quality_issues: List of validation errors or quality problems
+
+        Returns:
+            Enhanced SubMission with refined goal and requirements
+        """
+        logger.info(f"🔍 Enhancing mission '{mission.id}' with LLM...")
+
+        # Build enhancement prompt
+        issues_str = "\n".join(f"- {issue}" for issue in quality_issues) if quality_issues else "General quality improvement needed"
+
+        prompt = f"""You are a task refinement expert. A mission has failed validation or quality checks.
+Your job is to refine the mission requirements to make them more specific and achievable.
+
+# Original Mission
+ID: {mission.id}
+Type: {mission.type}
+Goal: {mission.goal}
+
+## Current Requirements
+{chr(10).join(f"- {req}" for req in mission.requirements)}
+
+## Current Success Criteria
+{chr(10).join(f"- {crit}" for crit in mission.success_criteria)}
+
+## Quality Issues Encountered
+{issues_str}
+
+# Task
+Refine this mission to address the quality issues. Make the goal more specific, add missing requirements,
+and clarify success criteria. Be concrete and actionable.
+
+Return a JSON object with this exact structure:
+{{
+    "goal": "refined goal statement",
+    "requirements": ["requirement1", "requirement2", ...],
+    "success_criteria": ["criterion1", "criterion2", ...]
+}}
+
+IMPORTANT: Return ONLY the JSON object, no additional text."""
+
+        try:
+            # Call LLM
+            response = await run_claude_prompt(
+                prompt=prompt,
+                model=self.model,
+                timeout_seconds=60
+            )
+
+            # Parse response
+            import json
+            import re
+
+            # Extract JSON from response (might have markdown code blocks)
+            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                # Try to find raw JSON
+                json_match = re.search(r'\{.*\}', response, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(0)
+                else:
+                    raise ValueError("No JSON found in LLM response")
+
+            enhanced_data = json.loads(json_str)
+
+            # Create enhanced mission
+            enhanced_mission = SubMission(
+                id=mission.id,
+                type=mission.type,
+                goal=enhanced_data.get("goal", mission.goal),
+                requirements=enhanced_data.get("requirements", mission.requirements),
+                success_criteria=enhanced_data.get("success_criteria", mission.success_criteria),
+                dependencies=mission.dependencies,
+                priority=mission.priority,
+                estimated_cost_usd=mission.estimated_cost_usd
+            )
+
+            logger.info(f"✅ Mission enhanced successfully")
+            logger.info(f"   New goal: {enhanced_mission.goal}")
+            logger.info(f"   Requirements updated: {len(enhanced_mission.requirements)} items")
+
+            return enhanced_mission
+
+        except Exception as e:
+            logger.error(f"❌ Failed to enhance mission: {e}")
+            logger.warning(f"   Falling back to original mission")
+            return mission
+
     def _record_intervention(
         self,
         mission: SubMission,
@@ -521,7 +649,8 @@ class LeaderAgent:
             session_id=self.context.session_id,
             goal=self.context.goal,
             mission_results=self.context.completed_missions,
-            metadata=metadata
+            metadata=metadata,
+            intervention_history=self.intervention_history
         )
 
         # Generate reports in multiple formats
