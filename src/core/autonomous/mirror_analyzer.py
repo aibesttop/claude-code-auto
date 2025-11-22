@@ -124,7 +124,7 @@ class MirrorAnalyzer:
             # Run Claude in mirror environment
             response_text, _ = await run_claude_prompt(
                 prompt=prompt,
-                cwd=str(mirror_path),
+                work_dir=str(mirror_path),  # ← Fixed: use work_dir instead of cwd
                 model=model,
                 permission_mode="bypassPermissions",
                 timeout=timeout
