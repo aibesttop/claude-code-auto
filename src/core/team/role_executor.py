@@ -226,12 +226,79 @@ Do NOT regenerate everything, just fix the specific issues.
         return outputs
     
     def _format_context(self, context: Dict) -> str:
-        """Format context from previous roles"""
+        """
+        Format context from previous roles with full content preservation.
+
+        Strategy:
+        - For short content (<500 chars): include full text
+        - For long content: save to trace file + provide intelligent summary
+        """
         lines = []
+
         for role_name, role_result in context.items():
-            lines.append(f"### {role_name}")
+            lines.append(f"### {role_name} Outputs")
+
             if 'outputs' in role_result:
                 for file, content in role_result['outputs'].items():
-                    preview = content[:300] + "..." if len(content) > 300 else content
-                    lines.append(f"**{file}**:\n```\n{preview}\n```")
+                    if len(content) <= 500:
+                        # Short content: include fully
+                        lines.append(f"**{file}** (full content):")
+                        lines.append(f"```")
+                        lines.append(content)
+                        lines.append(f"```")
+                    else:
+                        # Long content: save to trace + intelligent summary
+                        trace_file = self._save_context_to_trace(role_name, file, content)
+
+                        # Intelligent summary: first 300 chars + last 100 chars
+                        summary_start = content[:300]
+                        summary_end = content[-100:]
+
+                        lines.append(f"**{file}** ({len(content)} chars):")
+                        lines.append(f"```")
+                        lines.append(summary_start)
+                        lines.append(f"... [content truncated, see full version below] ...")
+                        lines.append(summary_end)
+                        lines.append(f"```")
+                        lines.append(f"📄 Full content saved to: `{trace_file}`")
+
+                    lines.append("")  # Blank line between files
+
+            # Include iteration info
+            if 'iterations' in role_result:
+                lines.append(f"*Completed in {role_result['iterations']} iterations*")
+                lines.append("")
+
+        if not lines:
+            return "No previous context available."
+
         return "\n".join(lines)
+
+    def _save_context_to_trace(self, role_name: str, filename: str, content: str) -> str:
+        """
+        Save full context content to trace file for reference.
+
+        Args:
+            role_name: Name of the role that generated this content
+            filename: Original filename
+            content: Full content to save
+
+        Returns:
+            Path to the saved trace file
+        """
+        try:
+            from pathlib import Path
+            trace_dir = Path("logs/trace")
+            trace_dir.mkdir(parents=True, exist_ok=True)
+
+            # Sanitize filename for filesystem
+            safe_filename = filename.replace("/", "_").replace("\\", "_")
+            trace_filename = f"context_{role_name}_{safe_filename}"
+            trace_path = trace_dir / trace_filename
+
+            trace_path.write_text(content, encoding='utf-8')
+            return str(trace_path)
+
+        except Exception as e:
+            logger.error(f"Failed to save context to trace: {e}")
+            return "trace_save_failed"
