@@ -140,3 +140,6 @@ demo_act/*.session
 # Cache
 .cache/
 *.cache
+
+# Test output
+test_output/

@@ -493,41 +493,58 @@ class LeaderAgent:
         """
         Integrate all mission outputs into final deliverable.
 
-        For v4.0, this is a simple aggregation.
-        Future versions will use OutputIntegrator for more sophisticated integration.
+        Uses OutputIntegrator for sophisticated integration and multi-format reporting.
         """
-        deliverable = {
-            "goal": self.context.goal,
-            "session_id": self.context.session_id,
-            "missions": {},
-            "summary": {}
+        from src.core.output.output_integrator import OutputIntegrator, OutputFormat
+
+        # Create OutputIntegrator
+        integrator = OutputIntegrator(self.work_dir)
+
+        # Prepare metadata
+        metadata = {
+            "intervention_count": self.context.intervention_count,
+            "model": self.model
         }
 
-        # Collect all outputs
-        for mission_id, result in self.context.completed_missions.items():
-            deliverable["missions"][mission_id] = {
-                "type": result.get('mission_type', 'unknown'),
-                "role": result.get('role', 'unknown'),
-                "outputs": result.get('outputs', {}),
-                "iterations": result.get('iterations', 1)
-            }
+        # Integrate outputs
+        integrated = integrator.integrate(
+            session_id=self.context.session_id,
+            goal=self.context.goal,
+            mission_results=self.context.completed_missions,
+            metadata=metadata
+        )
 
-        # Generate summary
-        deliverable["summary"] = {
-            "total_missions": len(self.context.missions),
-            "completed_missions": len(self.context.completed_missions),
-            "total_cost_usd": round(self.context.total_cost_usd, 2),
-            "total_interventions": self.context.intervention_count,
-            "duration_seconds": round(time.time() - self.context.start_time, 1)
+        # Generate reports in multiple formats
+        reports = integrator.generate_reports(
+            integrated,
+            formats=[OutputFormat.MARKDOWN, OutputFormat.JSON, OutputFormat.HTML]
+        )
+
+        # Organize deliverables
+        integrator.organize_deliverables(integrated)
+
+        logger.info(f"📦 Deliverable integration complete")
+        logger.info(f"   Reports generated: {len(reports)}")
+        for fmt, path in reports.items():
+            logger.info(f"     {fmt.value}: {path}")
+
+        # Return deliverable dictionary for backward compatibility
+        return {
+            "goal": integrated.goal,
+            "session_id": integrated.session_id,
+            "missions": {
+                m.mission_id: {
+                    "type": m.mission_type,
+                    "role": m.role,
+                    "outputs": m.files,
+                    "iterations": m.iterations,
+                    "quality_score": m.quality_score
+                }
+                for m in integrated.mission_outputs
+            },
+            "summary": integrated.summary,
+            "reports": {fmt.value: str(path) for fmt, path in reports.items()}
         }
-
-        # Save deliverable
-        deliverable_file = self.work_dir / f"{self.context.session_id}_deliverable.json"
-        deliverable_file.write_text(json.dumps(deliverable, indent=2), encoding='utf-8')
-
-        logger.info(f"📦 Deliverable saved: {deliverable_file}")
-
-        return deliverable
 
     def _get_metadata(self) -> Dict[str, Any]:
         """Get execution metadata"""
