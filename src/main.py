@@ -211,12 +211,18 @@ async def run_team_mode(config, executor, work_dir, logger, event_store, session
             state_manager.save()
 
         # 3. Execute team workflow
+        # Check if autonomous mode is enabled (v1.0 soul)
+        autonomous_mode = getattr(config.team, 'autonomous_mode', False)
+        if autonomous_mode:
+            logger.info("🔄 Autonomous mode enabled - roles use AI judgment instead of validation rules")
+
         logger.info("🚀 Starting team orchestration...")
         orchestrator = TeamOrchestrator(
             roles=roles,
             executor_agent=executor,
             work_dir=str(work_dir),
-            state_manager=state_manager  # Pass state manager
+            state_manager=state_manager,  # Pass state manager
+            autonomous_mode=autonomous_mode  # v1.0 soul: AI自主判断
         )
 
         result = await orchestrator.execute(config.task.goal)

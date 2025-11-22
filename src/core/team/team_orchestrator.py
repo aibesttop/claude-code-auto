@@ -28,7 +28,8 @@ class TeamOrchestrator:
         roles: List[Role],
         executor_agent: ExecutorAgent,
         work_dir: str,
-        state_manager=None
+        state_manager=None,
+        autonomous_mode: bool = False
     ):
         """
         Initialize the team orchestrator.
@@ -38,11 +39,16 @@ class TeamOrchestrator:
             executor_agent: Existing ExecutorAgent instance
             work_dir: Working directory
             state_manager: Optional StateManager for visualization updates
+            autonomous_mode: Enable v1.0 autonomous loop for each role (AI judgment)
         """
         self.roles = roles
         self.executor = executor_agent
         self.work_dir = work_dir
         self.state_manager = state_manager
+        self.autonomous_mode = autonomous_mode
+
+        if autonomous_mode:
+            logger.info("🔄 Team运行在自主模式 - 每个角色使用AI判断而非验证规则")
 
         # State management helper (eliminates code duplication)
         self.state_helper = StateManagerHelper(state_manager)
@@ -78,11 +84,12 @@ class TeamOrchestrator:
             # Update role status to IN_PROGRESS
             self.state_helper.update_role_status(role.name, NodeStatus.IN_PROGRESS)
 
-            # Create role executor
+            # Create role executor (with autonomous mode if enabled)
             role_executor = RoleExecutor(
                 role=role,
                 executor_agent=self.executor,
-                work_dir=self.work_dir
+                work_dir=self.work_dir,
+                autonomous_mode=self.autonomous_mode  # v1.0 soul: AI judgment
             )
 
             # Execute role mission (small loop)

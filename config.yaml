@@ -97,3 +97,13 @@ leader:
   quality_threshold: 70.0
   enable_intervention: true
   resource_config_dir: "resources"
+
+# Team Mode Configuration
+team:
+  autonomous_mode: true  # v1.0 Soul: Use AI judgment instead of validation rules
+  # When enabled:
+  # - Each role runs v1.0-style autonomous loop
+  # - AI analyzes task in mirror environment
+  # - AI decides if task is done well (quality_score >= 8)
+  # - Roles continue improving until AI is satisfied
+  # - No hardcoded validation rules

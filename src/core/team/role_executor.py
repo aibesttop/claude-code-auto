@@ -11,6 +11,7 @@ from src.core.agents.executor import ExecutorAgent
 from src.core.agents.planner import PlannerAgent
 from src.core.team.quality_validator import SemanticQualityValidator
 from src.core.team.validator import OptimizedValidator
+from src.core.autonomous.mirror_analyzer import MirrorAnalyzer
 import logging
 import re
 
@@ -34,7 +35,8 @@ class RoleExecutor:
         use_planner: bool = False,
         model: Optional[str] = None,
         timeout_seconds: int = 300,
-        permission_mode: str = "bypassPermissions"
+        permission_mode: str = "bypassPermissions",
+        autonomous_mode: bool = False
     ):
         """
         Initialize the role executor.
@@ -48,15 +50,22 @@ class RoleExecutor:
             model: Model to use for planner (if use_planner=True)
             timeout_seconds: Timeout for planner calls
             permission_mode: Permission mode for planner
+            autonomous_mode: Use v1.0 autonomous loop (AI judgment instead of validation rules)
         """
         self.role = role
         self.executor = executor_agent
         self.work_dir = Path(work_dir)
         self.session_id = session_id or "unknown"
         self.use_planner = use_planner
+        self.autonomous_mode = autonomous_mode
 
         # Initialize optimized validator with caching
         self.validator = OptimizedValidator()
+
+        # Initialize mirror analyzer for autonomous mode (v1.0 soul)
+        if autonomous_mode:
+            self.mirror_analyzer = MirrorAnalyzer(str(work_dir))
+            logger.info(f"🔄 Autonomous mode enabled for {role.name}")
 
         # Estimate task complexity for adaptive validation
         self.task_complexity = self._estimate_task_complexity(role.mission.goal)
@@ -84,7 +93,7 @@ class RoleExecutor:
     
     async def execute(self, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """
-        Execute role's mission (with optional planner integration).
+        Execute role's mission (with optional planner integration or autonomous mode).
 
         Args:
             context: Outputs from previous roles
@@ -94,9 +103,14 @@ class RoleExecutor:
                 "success": bool,
                 "outputs": Dict[str, str],  # filename -> content
                 "iterations": int,
-                "validation_result": Dict
+                "validation_result": Dict or "ai_judgment": Dict (for autonomous mode)
             }
         """
+        # v1.0 Autonomous mode - AI自主判断循环
+        if self.autonomous_mode:
+            return await self._execute_autonomous(context)
+
+        # Normal modes
         if self.use_planner and self.planner:
             return await self._execute_with_planner(context)
         else:
@@ -189,6 +203,155 @@ class RoleExecutor:
             "iterations": iteration,
             "validation_result": validation
         }
+
+    async def _execute_autonomous(self, context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        Execute role's mission with v1.0 autonomous loop.
+
+        This is the "soul" of v1.0: AI自主判断循环
+        - Use mirror analysis instead of validation rules
+        - Let AI decide if task is done well enough
+        - Continue improving until AI is satisfied (quality_score >= 8)
+
+        Args:
+            context: Outputs from previous roles
+
+        Returns:
+            Execution result dictionary with ai_judgment
+        """
+        mission = self.role.mission
+        max_iterations = 50  # Autonomous mode allows more iterations
+
+        logger.info(f"🔄 {self.role.name} starting AUTONOMOUS mission: {mission.goal}")
+        logger.info(f"   AI will judge task completion (no validation rules)")
+
+        # Build initial task
+        task = self._build_task(mission, context)
+
+        # v1.0 Autonomous loop: while True with AI judgment
+        iteration = 0
+        ai_judgment = None
+        quality_scores = []  # Track quality progression
+
+        while iteration < max_iterations:
+            iteration += 1
+            logger.info(f"\n{'='*60}")
+            logger.info(f"🔄 Autonomous Iteration {iteration}/{max_iterations}")
+            logger.info(f"{'='*60}")
+
+            # Execute task
+            try:
+                result = await self.executor.execute_task(task)
+                logger.info(f"✅ Task execution completed")
+            except Exception as e:
+                logger.error(f"❌ Executor failed: {e}")
+                task = f"Previous attempt failed with error: {e}\n\nPlease try again and fix the issue.\n\n{task}"
+                continue
+
+            # AI Analysis in Mirror (v1.0 core mechanism)
+            logger.info(f"🔍 AI analyzing task completion in mirror environment...")
+
+            try:
+                completed, next_action, analysis = await self.mirror_analyzer.ai_analyze_progress(
+                    goal=mission.goal,
+                    role_name=self.role.name,
+                    context=self._format_context(context) if context else None
+                )
+
+                ai_judgment = {
+                    "completed": completed,
+                    "next_action": next_action,
+                    "analysis": analysis,
+                    "iteration": iteration
+                }
+
+                # Extract quality score if available
+                # (The mirror analyzer returns this in the analysis JSON)
+                quality_score = self._extract_quality_score(analysis)
+                if quality_score:
+                    quality_scores.append(quality_score)
+                    logger.info(f"📊 Quality Score: {quality_score}/10")
+
+                logger.info(f"AI判断: {'✅ 满意，任务完成' if completed else '⏳ 需要继续改进'}")
+                logger.info(f"AI分析: {analysis[:200]}...")
+
+                if completed:
+                    logger.info(f"\n🎉 AI判断任务已完成！")
+                    logger.info(f"   总迭代次数: {iteration}")
+                    if quality_scores:
+                        logger.info(f"   质量提升: {quality_scores[0]}/10 → {quality_scores[-1]}/10")
+
+                    return {
+                        "success": True,
+                        "outputs": self._collect_outputs(),
+                        "iterations": iteration,
+                        "ai_judgment": ai_judgment,
+                        "quality_scores": quality_scores
+                    }
+                else:
+                    # AI suggests next action
+                    logger.info(f"💡 AI建议下一步: {next_action[:150]}...")
+
+                    # Build next iteration task based on AI's suggestion
+                    task = f"""
+Previous iteration analysis:
+{analysis}
+
+Next action to improve quality:
+{next_action}
+
+Original goal: {mission.goal}
+
+Please implement the suggested improvements.
+"""
+
+            except Exception as e:
+                logger.error(f"❌ AI分析失败: {e}")
+                # Fallback: use validation rules
+                logger.warning("⚠️ Falling back to validation rules")
+                validation = await self._validate_outputs()
+
+                if validation['passed']:
+                    return {
+                        "success": True,
+                        "outputs": self._collect_outputs(),
+                        "iterations": iteration,
+                        "ai_judgment": {"error": str(e), "fallback": "validation_passed"},
+                        "validation_result": validation
+                    }
+                else:
+                    task = self._build_retry_task(validation['errors'])
+                    continue
+
+        # Max iterations reached
+        logger.warning(f"⚠️ {self.role.name} reached max iterations ({max_iterations})")
+        logger.info(f"   AI has not declared task complete yet")
+
+        if quality_scores:
+            logger.info(f"   质量进展: {quality_scores}")
+
+        return {
+            "success": False,
+            "outputs": self._collect_outputs(),
+            "iterations": iteration,
+            "ai_judgment": ai_judgment or {"error": "max_iterations_reached"},
+            "quality_scores": quality_scores
+        }
+
+    def _extract_quality_score(self, analysis: str) -> Optional[int]:
+        """Extract quality_score from AI analysis text."""
+        try:
+            import json
+            # Try to find JSON in analysis
+            start_idx = analysis.find("{")
+            end_idx = analysis.rfind("}") + 1
+            if start_idx != -1 and end_idx != 0:
+                json_str = analysis[start_idx:end_idx]
+                data = json.loads(json_str)
+                return data.get("quality_score")
+        except Exception:
+            pass
+        return None
 
     async def _execute_with_planner(self, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """
