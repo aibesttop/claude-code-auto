@@ -29,6 +29,7 @@ class SubMission:
     dependencies: List[str] = field(default_factory=list)  # IDs of dependent missions
     priority: int = 1
     estimated_cost_usd: float = 0.0
+    max_iterations: int = 10  # Maximum retry attempts for this mission
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization"""
@@ -40,7 +41,8 @@ class SubMission:
             "success_criteria": self.success_criteria,
             "dependencies": self.dependencies,
             "priority": self.priority,
-            "estimated_cost_usd": self.estimated_cost_usd
+            "estimated_cost_usd": self.estimated_cost_usd,
+            "max_iterations": self.max_iterations
         }
 
 
@@ -154,7 +156,8 @@ Now decompose this SPECIFIC goal into sub-missions. Remember: STAY ON THE USER'S
                     success_criteria=data.get("success_criteria", []),
                     dependencies=data.get("dependencies", []),
                     priority=data.get("priority", 1),
-                    estimated_cost_usd=data.get("estimated_cost_usd", 0.0)
+                    estimated_cost_usd=data.get("estimated_cost_usd", 0.0),
+                    max_iterations=data.get("max_iterations", 10)
                 )
                 missions.append(mission)
 
@@ -215,7 +218,8 @@ Now decompose this SPECIFIC goal into sub-missions. Remember: STAY ON THE USER'S
             success_criteria=["Task completed"],
             dependencies=[],
             priority=5,
-            estimated_cost_usd=0.0
+            estimated_cost_usd=0.0,
+            max_iterations=10
         )]
 
     def validate_dependencies(self, missions: List[SubMission]) -> bool:
