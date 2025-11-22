@@ -105,6 +105,11 @@ class LeaderConfig(BaseModel):
     resource_config_dir: str = Field(default="resources", description="Resource configuration directory")
 
 
+class TeamConfig(BaseModel):
+    """Team Mode configuration - v1.0 Soul"""
+    autonomous_mode: bool = Field(default=True, description="Use AI judgment instead of validation rules (v1.0 soul)")
+
+
 class WorkflowConfig(BaseModel):
     directories: DirectoriesConfig
     task: TaskConfig
@@ -120,6 +125,7 @@ class WorkflowConfig(BaseModel):
     research: ResearchConfig = Field(default_factory=ResearchConfig)
     cost_control: CostControlConfig = Field(default_factory=CostControlConfig)
     leader: LeaderConfig = Field(default_factory=LeaderConfig)
+    team: TeamConfig = Field(default_factory=TeamConfig)  # v1.0 Soul configuration
 
     @field_validator('directories')
     def validate_directories(cls, v):

@@ -20,7 +20,8 @@ output_standard:
   
   validation_rules:
     - type: "file_exists"
-      file: "creative_exploration_worksheet.md"- type: "min_length"
+      file: "creative_exploration_worksheet.md"
+    - type: "min_length"
       file: "creative_exploration_worksheet.md"
       min_chars: 1000
     

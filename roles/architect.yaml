@@ -20,7 +20,8 @@ output_standard:
   
   validation_rules:
     - type: "file_exists"
-      file: "architecture-design.md"- type: "min_length"
+      file: "architecture-design.md"
+    - type: "min_length"
       file: "architecture-design.md"
       min_chars: 3000
     
