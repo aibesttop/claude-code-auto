@@ -370,15 +370,20 @@ You should primarily use the following tools for this task:
 ## Output Standard{template_info}
 
 Working Directory: {self.work_dir}
-IMPORTANT: You must write all files to the directory '{self.work_dir}'.
-Example: write_file("{self.work_dir}/example.md", ...)
+IMPORTANT: Use RELATIVE paths for all file operations.
+- Correct: write_file("market-research.md", ...)
+- Correct: write_file("docs/analysis.md", ...)
+- WRONG: write_file("{self.work_dir}/market-research.md", ...)
+- WRONG: write_file("demo_act/market-research.md", ...)
 
-Required files:
+The working directory is already set to {self.work_dir}, so just use filenames directly.
+
+Required files (use these exact filenames):
 {required_files_str}
 {tools_section}
 ## Instructions
 1. Complete all success criteria
-2. Generate all required files in '{self.work_dir}'
+2. Generate all required files using RELATIVE paths
 3. Ensure outputs meet validation rules
 4. Use the appropriate tools for this task type
 """
@@ -395,7 +400,8 @@ Required files:
 ## Instructions
 Fix the above issues and ensure all validation rules pass.
 Do NOT regenerate everything, just fix the specific issues.
-IMPORTANT: Write files to '{self.work_dir}'.
+IMPORTANT: Use RELATIVE paths only (e.g., "filename.md", not "{self.work_dir}/filename.md").
+The working directory is already set to: {self.work_dir}
 """
     
     async def _validate_outputs(self) -> Dict[str, Any]:
