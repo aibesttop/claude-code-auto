@@ -20,6 +20,7 @@ from src.core.team.team_assembler import TeamAssembler
 from src.core.agents.executor import ExecutorAgent
 from src.core.agents.sdk_client import run_claude_prompt
 from src.core.events import EventStore, CostTracker
+from src.core.governance.helper_governor import HelperGovernor, HelperExitCondition, ExitConditionType
 from src.utils.logger import get_logger
 
 logger = get_logger()
@@ -106,6 +107,7 @@ class LeaderAgent:
         self.role_registry = RoleRegistry()
         self.dependency_resolver = DependencyResolver()
         self.team_assembler = TeamAssembler(self.role_registry)
+        self.helper_governor = HelperGovernor()
 
         # Tracking
         self.event_store = EventStore()
@@ -381,9 +383,29 @@ class LeaderAgent:
                 continue
 
             elif decision.action == InterventionAction.ESCALATE:
-                logger.warning(f"   ⚠️ Escalating...")
-                # TODO: Implement escalation (add helper role)
-                continue
+                logger.warning(f"   ⚠️ Escalating with helper role...")
+                # Spawn helper role to assist
+                helper_result = await self._spawn_helper_role(mission, role, result)
+
+                if helper_result.get('success'):
+                    logger.info(f"      Helper role succeeded!")
+                    # Merge helper outputs with main result
+                    result['outputs'] = helper_result.get('outputs', {})
+                    result['success'] = True
+                    result['validation_passed'] = True
+                    # Return success after helper assistance
+                    return {
+                        "success": True,
+                        "mission_id": mission.id,
+                        "role": role.name,
+                        "result": result,
+                        "iterations": iteration,
+                        "helper_assisted": True
+                    }
+                else:
+                    logger.warning(f"      Helper role also failed")
+                    # Continue to retry or terminate
+                    continue
 
             else:  # TERMINATE
                 logger.error(f"   ❌ Terminating mission")
@@ -466,6 +488,161 @@ class LeaderAgent:
             action=InterventionAction.CONTINUE,
             reason="Mission completed successfully"
         )
+
+    async def _spawn_helper_role(
+        self,
+        mission: SubMission,
+        main_role: Role,
+        failed_result: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Spawn a helper role to assist with a failed mission.
+
+        Args:
+            mission: The mission that failed
+            main_role: The main role that failed
+            failed_result: The failed execution result
+
+        Returns:
+            Helper execution result
+        """
+        logger.info(f"🆘 Spawning helper role for mission '{mission.id}'...")
+
+        # Determine helper role type based on failure reason
+        validation_errors = failed_result.get('validation_result', {}).get('errors', [])
+        helper_role_name = self._select_helper_role(validation_errors)
+
+        logger.info(f"   Selected helper: {helper_role_name}")
+
+        # Register helper with governor
+        helper_id = self.helper_governor.register_helper(
+            role_name=helper_role_name,
+            mission_id=mission.id
+        )
+
+        # Build helper-specific task
+        helper_task = f"""You are a {helper_role_name} helping to fix a failed mission.
+
+# Original Mission
+Goal: {mission.goal}
+Type: {mission.type}
+
+# Main Role That Failed
+Role: {main_role.name}
+
+# Validation Errors
+{chr(10).join(f"- {err}" for err in validation_errors)}
+
+# Your Task
+Analyze the failures and fix the issues. Generate the required outputs that pass validation.
+
+Working directory: {self.work_dir}
+IMPORTANT: Write all files to '{self.work_dir}'
+
+Required files:
+{chr(10).join(f"- {f}" for f in main_role.output_standard.required_files)}
+
+Success criteria:
+{chr(10).join(f"- {c}" for c in mission.success_criteria)}
+"""
+
+        # Create helper executor
+        helper_executor = ExecutorAgent(
+            work_dir=str(self.work_dir),
+            model="haiku",  # Use faster/cheaper model for helpers
+            timeout_seconds=300,
+            permission_mode="bypassPermissions"
+        )
+
+        # Execute helper with iteration limit
+        max_helper_iterations = 5
+        for iter_count in range(1, max_helper_iterations + 1):
+            logger.info(f"   Helper iteration {iter_count}/{max_helper_iterations}")
+
+            try:
+                # Execute task
+                await helper_executor.execute_task(helper_task)
+
+                # Record iteration
+                self.helper_governor.record_iteration(
+                    helper_id=helper_id,
+                    success=True,
+                    cost_usd=0.05,  # Estimate
+                    progress_delta=0.2
+                )
+
+                # Check if should exit
+                should_exit, exit_reason = self.helper_governor.should_exit(helper_id)
+                if should_exit:
+                    logger.info(f"   Helper exit condition: {exit_reason}")
+                    break
+
+                # Validate outputs (reuse main role validation)
+                from pathlib import Path
+                outputs = {}
+                all_valid = True
+
+                for filename in main_role.output_standard.required_files:
+                    file_path = Path(self.work_dir) / filename
+                    if file_path.exists():
+                        outputs[filename] = file_path.read_text(encoding='utf-8')
+                    else:
+                        all_valid = False
+                        break
+
+                if all_valid:
+                    logger.info(f"✅ Helper role completed successfully!")
+                    self.helper_governor.exit_helper(helper_id, reason="Goal achieved")
+                    return {
+                        "success": True,
+                        "outputs": outputs,
+                        "helper_id": helper_id,
+                        "iterations": iter_count
+                    }
+
+                # Update task with feedback
+                helper_task += f"\n\nPrevious attempt {iter_count} failed. Please try again and ensure all files are created."
+
+            except Exception as e:
+                logger.error(f"   Helper execution error: {e}")
+                self.helper_governor.record_iteration(
+                    helper_id=helper_id,
+                    success=False,
+                    cost_usd=0.05
+                )
+
+        # Helper failed
+        self.helper_governor.exit_helper(helper_id, reason="Max iterations exceeded")
+        logger.warning(f"❌ Helper role failed after {max_helper_iterations} iterations")
+
+        return {
+            "success": False,
+            "helper_id": helper_id,
+            "error": "Helper role could not complete the task"
+        }
+
+    def _select_helper_role(self, validation_errors: List[str]) -> str:
+        """
+        Select appropriate helper role based on validation errors.
+
+        Args:
+            validation_errors: List of validation error messages
+
+        Returns:
+            Helper role name
+        """
+        # Simple heuristic-based selection
+        errors_text = " ".join(validation_errors).lower()
+
+        if "security" in errors_text or "vulnerability" in errors_text:
+            return "SecurityExpert"
+        elif "performance" in errors_text or "slow" in errors_text:
+            return "PerfAnalyzer"
+        elif "review" in errors_text or "quality" in errors_text:
+            return "Reviewer"
+        else:
+            # Default to Debugger for general issues
+            return "Debugger"
 
     async def _enhance_mission(
         self,
