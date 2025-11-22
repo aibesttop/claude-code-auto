@@ -4,11 +4,12 @@ Role Executor
 Executes a single role's mission with validation loop.
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from pathlib import Path
 from src.core.team.role_registry import Role, ValidationRule
 from src.core.agents.executor import ExecutorAgent
 from src.core.agents.planner import PlannerAgent
+from src.core.team.quality_validator import SemanticQualityValidator
 import logging
 import re
 
@@ -128,7 +129,7 @@ class RoleExecutor:
                 continue
 
             # Validate outputs
-            validation = self._validate_outputs()
+            validation = await self._validate_outputs()
 
             if validation['passed']:
                 logger.info(f"✅ {self.role.name} mission completed!")
@@ -227,7 +228,7 @@ class RoleExecutor:
                 continue
 
             # 3. Validation phase
-            validation = self._validate_outputs()
+            validation = await self._validate_outputs()
 
             if validation['passed']:
                 logger.info(f"✅ {self.role.name} mission completed with planner!")
@@ -243,7 +244,7 @@ class RoleExecutor:
                 last_result += f"\n\nValidation errors: {validation['errors']}"
 
         # Check final validation state
-        validation = self._validate_outputs()
+        validation = await self._validate_outputs()
         if validation['passed']:
             logger.info(f"✅ {self.role.name} mission completed!")
             return {
@@ -307,24 +308,42 @@ Fix the above issues and ensure all validation rules pass.
 Do NOT regenerate everything, just fix the specific issues.
 """
     
-    def _validate_outputs(self) -> Dict[str, Any]:
-        """Validate outputs against validation rules"""
+    async def _validate_outputs(self) -> Dict[str, Any]:
+        """Validate outputs against validation rules (format + optional quality)"""
         errors = []
-        
+
+        # 1. Format validation (original rules)
+        format_errors = self._validate_format()
+        errors.extend(format_errors)
+
+        # 2. Semantic quality validation (optional, costs tokens)
+        if self.role.enable_quality_check:
+            quality_errors = await self._validate_quality()
+            errors.extend(quality_errors)
+
+        return {
+            "passed": len(errors) == 0,
+            "errors": errors
+        }
+
+    def _validate_format(self) -> List[str]:
+        """Validate format rules (file existence, content, length)"""
+        errors = []
+
         for rule in self.role.output_standard.validation_rules:
             rule_type = rule.type
-            
+
             if rule_type == "file_exists":
                 file_path = self.work_dir / rule.file
                 if not file_path.exists():
                     errors.append(f"Missing required file: {rule.file}")
-            
+
             elif rule_type == "all_files_exist":
                 for file in rule.files:
                     file_path = self.work_dir / file
                     if not file_path.exists():
                         errors.append(f"Missing required file: {file}")
-            
+
             elif rule_type == "content_check":
                 file_path = self.work_dir / rule.file
                 if file_path.exists():
@@ -335,7 +354,7 @@ Do NOT regenerate everything, just fix the specific issues.
                         pattern = re.escape(required)
                         # Replace escaped spaces with flexible whitespace pattern
                         pattern = pattern.replace(r'\ ', r'\s+')
-                        
+
                         # Search with case-sensitive matching
                         if not re.search(pattern, content):
                             errors.append(f"{rule.file} missing section: {required}")
@@ -344,7 +363,7 @@ Do NOT regenerate everything, just fix the specific issues.
                             logger.debug(f"File content preview: {content[:500]}")
                 else:
                     errors.append(f"Cannot check content, file missing: {rule.file}")
-            
+
             elif rule_type == "no_placeholders":
                 for file in rule.files:
                     file_path = self.work_dir / file
@@ -353,18 +372,62 @@ Do NOT regenerate everything, just fix the specific issues.
                         for pattern in rule.forbidden_patterns:
                             if re.search(pattern, content):
                                 errors.append(f"{file} contains placeholder: {pattern}")
-            
+
             elif rule_type == "min_length":
                 file_path = self.work_dir / rule.file
                 if file_path.exists():
                     content = file_path.read_text(encoding='utf-8')
                     if len(content) < rule.min_chars:
                         errors.append(f"{rule.file} too short: {len(content)} < {rule.min_chars} chars")
-        
-        return {
-            "passed": len(errors) == 0,
-            "errors": errors
-        }
+
+        return errors
+
+    async def _validate_quality(self) -> List[str]:
+        """Validate semantic quality using LLM"""
+        errors = []
+
+        try:
+            validator = SemanticQualityValidator(str(self.work_dir))
+
+            for file in self.role.output_standard.required_files:
+                file_path = self.work_dir / file
+
+                if not file_path.exists():
+                    continue  # Already caught by format validation
+
+                try:
+                    content = file_path.read_text(encoding='utf-8')
+
+                    quality = await validator.score_output(
+                        content=content,
+                        success_criteria=self.role.mission.success_criteria
+                    )
+
+                    logger.info(f"📊 Quality score for {file}: {quality.overall_score}/100")
+
+                    if quality.overall_score < self.role.quality_threshold:
+                        error_msg = (
+                            f"{file} quality score too low: {quality.overall_score:.1f}/100 "
+                            f"(threshold: {self.role.quality_threshold}). "
+                        )
+
+                        if quality.issues:
+                            error_msg += f"Issues: {', '.join(quality.issues[:3])}"  # Limit to 3 issues
+
+                        if quality.suggestions:
+                            error_msg += f" Suggestions: {', '.join(quality.suggestions[:2])}"
+
+                        errors.append(error_msg)
+
+                except Exception as e:
+                    logger.error(f"Failed to validate quality for {file}: {e}")
+                    errors.append(f"{file} quality validation failed: {str(e)}")
+
+        except Exception as e:
+            logger.error(f"Quality validation system error: {e}")
+            errors.append(f"Quality validation system error: {str(e)}")
+
+        return errors
     
     def _collect_outputs(self) -> Dict[str, str]:
         """Collect all generated outputs"""

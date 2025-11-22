@@ -47,6 +47,9 @@ class Role(BaseModel):
     recommended_persona: Optional[str] = None
     tools: List[str] = Field(default_factory=list)
     dependencies: List[str] = Field(default_factory=list)
+    # Quality validation (v3.1)
+    enable_quality_check: bool = Field(default=False, description="Enable semantic quality validation")
+    quality_threshold: float = Field(default=70.0, ge=0, le=100, description="Minimum quality score (0-100)")
 
 
 class RoleRegistry:
