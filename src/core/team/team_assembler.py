@@ -6,6 +6,11 @@ Analyzes initial_prompt and goal to determine which roles are needed.
 
 from typing import List
 from src.core.team.role_registry import RoleRegistry, Role
+from src.core.team.dependency_resolver import (
+    DependencyResolver,
+    CircularDependencyError,
+    MissingRoleError
+)
 from src.core.agents.sdk_client import run_claude_prompt
 from src.utils.json_utils import extract_json
 import logging
@@ -91,8 +96,61 @@ class TeamAssembler:
                 team.append(role)
             else:
                 logger.warning(f"Role not found: {name}")
-        
-        return team
+
+        if not team:
+            logger.error("No valid roles loaded")
+            return []
+
+        # Sort roles by dependencies using topological sort
+        logger.info("🔧 Resolving role dependencies...")
+        resolver = DependencyResolver()
+
+        try:
+            # Validate dependencies first
+            validation = resolver.validate_dependencies(team)
+            if not validation.valid:
+                logger.error(f"❌ Dependency validation failed: {validation.error}")
+                return []
+
+            if validation.warnings:
+                for warning in validation.warnings:
+                    logger.warning(f"⚠️ {warning}")
+
+            # Perform topological sort
+            sorted_team = resolver.topological_sort(team)
+            sorted_names = [r.name for r in sorted_team]
+
+            # Log execution plan
+            logger.info(f"✅ Dependency resolution complete")
+            logger.info(f"📋 Original LLM order: {role_names}")
+            logger.info(f"📋 Dependency-sorted order: {sorted_names}")
+
+            # Warn if LLM order differs from dependency order
+            if role_names != sorted_names:
+                logger.warning(
+                    f"⚠️ LLM-suggested order differs from dependency requirements. "
+                    f"Using dependency-correct order: {sorted_names}"
+                )
+
+            # Log detailed execution plan
+            plan = resolver.format_execution_plan(sorted_team)
+            logger.info(f"\n{plan}")
+
+            return sorted_team
+
+        except CircularDependencyError as e:
+            logger.error(f"❌ Circular dependency detected: {e}")
+            logger.error("Cannot proceed with team execution. Please fix role dependencies.")
+            return []
+
+        except MissingRoleError as e:
+            logger.error(f"❌ Missing role dependency: {e}")
+            logger.error("Cannot proceed with team execution. Please ensure all dependencies exist.")
+            return []
+
+        except Exception as e:
+            logger.error(f"❌ Unexpected error during dependency resolution: {e}")
+            return []
     
     def _build_analysis_prompt(self, initial_prompt: str, goal: str) -> str:
         """
