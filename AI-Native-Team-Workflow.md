@@ -4,66 +4,85 @@
 
 ---
 
-## 1️⃣ 整体系统架构流程
+## 1️⃣ 整体系统架构流程（两层模式）
+
+**架构说明**: Leader是Team Mode的内部编排者，而非独立模式
 
 ```mermaid
 graph TB
     Start([用户输入目标]) --> Config[加载配置config.yaml]
-    Config --> ModeCheck{选择运行模式}
+    Config --> ModeCheck{检查任务类型}
 
-    ModeCheck -->|Original Mode| SingleAgent[单Agent迭代模式]
-    ModeCheck -->|Team Mode| TeamFlow[团队协作模式]
-    ModeCheck -->|Leader Mode v4.0| LeaderFlow[智能编排模式]
+    ModeCheck -->|有initial_prompt<br/>团队协作任务| TeamMode[Team Mode<br/>━━━━━━━━<br/>Leader编排模式]
+    ModeCheck -->|简单单步任务<br/>无initial_prompt| OriginalMode[Original Mode<br/>━━━━━━━━<br/>单Agent迭代]
 
-    SingleAgent --> PlanExec[Planner + Executor循环]
+    TeamMode --> LeaderCore[Team Leader<br/>━━━━━━━━<br/>智能编排核心<br/>v4.0 LeaderAgent]
+
+    LeaderCore --> TaskDecomp[任务分解<br/>MissionDecomposer]
+    TaskDecomp --> TeamAssembly[团队组建<br/>TeamAssembler]
+    TeamAssembly --> DepResolve[依赖排序<br/>DependencyResolver]
+    DepResolve --> RoleOrch[角色编排<br/>RoleExecutor调度]
+    RoleOrch --> Monitor[监控 + 干预<br/>质量/成本/预算]
+    Monitor --> Integrate[输出集成<br/>汇总报告]
+
+    OriginalMode --> PlanExec[Planner + Executor循环]
     PlanExec --> Monitor1[成本追踪 + 状态持久化]
     Monitor1 --> End1([输出结果])
 
-    TeamFlow --> Assembly
-    LeaderFlow --> MissionDecomp[Mission Decomposer<br/>任务智能分解]
+    Integrate --> End2([可交付成果<br/>+ 执行报告])
 
-    Assembly[Team Assembler<br/>角色选择] --> DepResolve[Dependency Resolver<br/>拓扑排序]
-    DepResolve --> Orchestrate[Team Orchestrator<br/>线性执行]
-    Orchestrate --> RoleLoop[角色执行循环]
-    RoleLoop --> Monitor2[验证 + 成本追踪]
-    Monitor2 --> End2([可交付成果])
-
-    MissionDecomp --> LeaderOrchestrate[Leader Agent<br/>动态编排 + 干预]
-    LeaderOrchestrate --> OutputIntegrate[Output Integrator<br/>成果集成]
-    OutputIntegrate --> End3([智能交付])
-
-    style TeamFlow fill:#4CAF50,color:#fff
-    style LeaderFlow fill:#FF9800,color:#fff
-    style Assembly fill:#2196F3,color:#fff
-    style DepResolve fill:#2196F3,color:#fff
-    style Orchestrate fill:#2196F3,color:#fff
+    style TeamMode fill:#4CAF50,color:#fff,stroke:#2E7D32,stroke-width:3px
+    style LeaderCore fill:#FF9800,color:#fff,stroke:#E65100,stroke-width:3px
+    style OriginalMode fill:#2196F3,color:#fff
+    style TaskDecomp fill:#FF9800,color:#fff
+    style Monitor fill:#9C27B0,color:#fff
+    style Integrate fill:#4CAF50,color:#fff
 ```
 
 ---
 
-## 2️⃣ Team Mode 详细工作流
+## 2️⃣ Team Mode with Leader 详细工作流
+
+**核心变化**: Team Leader（LeaderAgent）作为编排核心，调用TeamAssembler/DependencyResolver
 
 ```mermaid
 flowchart TD
-    Start([Initial Prompt<br/>初始任务描述]) --> TeamAssembler[Team Assembler<br/>LLM分析任务选择角色]
+    Start([Team Mode启动<br/>initial_prompt]) --> InitLeader[初始化 Team Leader<br/>━━━━━━━━<br/>v4.0 LeaderAgent]
 
-    TeamAssembler -->|选中的角色| LoadRoles[加载角色定义<br/>roles/*.yaml]
+    InitLeader --> LeaderConfig[配置Leader参数<br/>• 质量阈值: 70.0<br/>• 最大重试: 3次<br/>• 预算限制<br/>• 干预策略]
+
+    LeaderConfig --> TaskDecomp[Leader: 任务分解<br/>━━━━━━━━<br/>调用 MissionDecomposer<br/>LLM分解goal]
+
+    TaskDecomp --> ParseMissions[解析SubMissions<br/>• 任务类型<br/>• 成功标准<br/>• 依赖关系]
+
+    ParseMissions --> CallAssembler[Leader: 组装团队<br/>━━━━━━━━<br/>调用 TeamAssembler<br/>选择角色]
+
+    CallAssembler -->|选中的角色| LoadRoles[加载角色定义<br/>roles/*.yaml]
     LoadRoles --> BuildGraph[构建依赖图<br/>Dependency Graph]
 
-    BuildGraph --> TopoSort[拓扑排序<br/>Kahn算法]
+    BuildGraph --> CallResolver[Leader: 依赖排序<br/>━━━━━━━━<br/>调用 DependencyResolver]
+
+    CallResolver --> TopoSort[拓扑排序<br/>Kahn算法]
     TopoSort --> CheckCycle{检测循环依赖}
 
-    CheckCycle -->|有循环| Error1([错误: 循环依赖])
-    CheckCycle -->|无循环| SortedRoles[已排序角色列表]
+    CheckCycle -->|有循环| Error1([Leader终止<br/>错误: 循环依赖])
+    CheckCycle -->|无循环| SortedRoles[获得执行顺序<br/>已排序角色列表]
 
-    SortedRoles --> StartOrch[Team Orchestrator<br/>开始编排]
+    SortedRoles --> LeaderOrch[Leader: 开始编排<br/>━━━━━━━━<br/>遍历每个角色]
 
-    StartOrch --> LoopCheck{还有角色?}
-    LoopCheck -->|是| NextRole[取出下一个角色]
-    LoopCheck -->|否| FinalOutput([所有角色完成<br/>输出可交付成果])
+    LeaderOrch --> LoopCheck{还有角色?}
+    LoopCheck -->|否| FinalIntegrate
+    LoopCheck -->|是| NextRole[Leader: 取出下一个角色<br/>+ 匹配SubMission]
 
-    NextRole --> CreateExecutor[创建 Role Executor]
-    CreateExecutor --> PersonaSwitch[Persona切换<br/>根据角色推荐]
+    NextRole --> InjectRes[Leader: 资源注入<br/>━━━━━━━━<br/>• 工具集<br/>• 技能提示<br/>• MCP服务器]
+
+    InjectRes --> CreateExecutor[Leader: 创建执行器<br/>━━━━━━━━<br/>RoleExecutor实例]
+
+    CreateExecutor --> AssignTask[Leader: 下发任务<br/>━━━━━━━━<br/>• SubMission goal<br/>• 上游context<br/>• 资源配置]
+
+    AssignTask --> MonitorStart[Leader: 开始监控<br/>━━━━━━━━<br/>成本/质量/时间追踪]
+
+    MonitorStart --> PersonaSwitch[Persona切换<br/>根据角色推荐]
 
     PersonaSwitch --> TaskLoop[任务执行循环<br/>max_iterations次]
 
@@ -72,20 +91,41 @@ flowchart TD
     UsePlanner -->|否| DirectExec
 
     PlannerStep --> DirectExec[Executor执行<br/>ReAct循环]
-    DirectExec --> GetOutput[获取角色输出]
+    DirectExec --> GetOutput[获取角色输出<br/>+ 执行统计]
 
     GetOutput --> FormatValid{格式验证}
     FormatValid -->|失败| RetryCheck{重试次数 < max?}
     RetryCheck -->|是| TaskLoop
-    RetryCheck -->|否| Error2([角色失败])
+    RetryCheck -->|否| Error2([角色执行失败])
 
     FormatValid -->|通过| QualityCheck{启用质量检查?}
-    QualityCheck -->|否| SaveOutput
+    QualityCheck -->|否| LeaderEval
     QualityCheck -->|是| LLMValidate[LLM语义质量评分<br/>Haiku模型]
 
     LLMValidate --> ScoreCheck{分数 >= 阈值?}
     ScoreCheck -->|否| RetryCheck
-    ScoreCheck -->|是| SaveOutput[保存角色输出]
+    ScoreCheck -->|是| LeaderEval[Leader: 质量评估<br/>━━━━━━━━<br/>• 语义评分<br/>• 成本检查<br/>• 预算检查]
+
+    LeaderEval --> DecideIntervention[Leader: 干预决策<br/>━━━━━━━━<br/>5种策略]
+
+    DecideIntervention --> ActionType{干预类型?}
+
+    ActionType -->|CONTINUE<br/>成功| SaveOutput[Leader: 收集输出<br/>━━━━━━━━<br/>保存角色输出]
+    ActionType -->|RETRY<br/>临时失败| RetryLoop{重试 < max_retries?}
+    ActionType -->|ENHANCE<br/>需求不清| EnhanceTask[Leader: 增强任务<br/>━━━━━━━━<br/>LLM细化需求]
+    ActionType -->|ESCALATE<br/>能力不足| AddHelper[Leader: 升级角色<br/>━━━━━━━━<br/>添加辅助角色]
+    ActionType -->|TERMINATE<br/>无法完成| Terminate([Leader终止流程<br/>任务失败])
+
+    RetryLoop -->|是| MonitorStart
+    RetryLoop -->|否| Error2
+
+    EnhanceTask --> MonitorStart
+    AddHelper --> CreateExecutor
+
+    Error2 --> LogFailure[Leader记录失败日志]
+    LogFailure --> UserDecision{用户干预?}
+    UserDecision -->|继续| LoopCheck
+    UserDecision -->|停止| End
 
     SaveOutput --> ContextPrepare[准备上下文传递]
     ContextPrepare --> LengthCheck{输出长度}
@@ -96,20 +136,35 @@ flowchart TD
     Summary --> SaveTrace[完整内容保存到<br/>trace文件]
     SaveTrace --> FullEmbed
 
-    FullEmbed --> UpdateContext[更新全局Context]
+    FullEmbed --> UpdateContext[Leader: 更新Context<br/>━━━━━━━━<br/>传递给下游角色]
     UpdateContext --> LogTrace[记录Markdown Trace<br/>logs/trace/]
 
-    LogTrace --> LoopCheck
+    LogTrace --> CheckBudget{Leader: 预算检查}
+    CheckBudget -->|超限| BudgetStop([Leader终止<br/>预算超限])
+    CheckBudget -->|正常| LoopCheck
 
-    Error1 -.-> End([流程结束])
-    Error2 -.-> End
-    FinalOutput -.-> End
+    FinalIntegrate[Leader: 输出集成<br/>━━━━━━━━<br/>调用OutputIntegrator]
+    FinalIntegrate --> GenSummary[生成汇总文档<br/>• README<br/>• 项目总结]
 
-    style TeamAssembler fill:#4CAF50,color:#fff
-    style TopoSort fill:#2196F3,color:#fff
+    GenSummary --> GenReport[Leader: 生成报告<br/>━━━━━━━━<br/>• 成本报告<br/>• 质量报告<br/>• 干预决策日志<br/>• 执行时间线]
+
+    GenReport --> End([Team任务完成<br/>可交付成果 + 报告])
+
+    Error1 -.-> End
+    Terminate -.-> End
+    BudgetStop -.-> End
+
+    style InitLeader fill:#FF9800,color:#fff,stroke:#E65100,stroke-width:3px
+    style TaskDecomp fill:#FF9800,color:#fff
+    style CallAssembler fill:#4CAF50,color:#fff
+    style CallResolver fill:#2196F3,color:#fff
+    style LeaderEval fill:#FF9800,color:#fff
+    style DecideIntervention fill:#9C27B0,color:#fff
     style DirectExec fill:#FF9800,color:#fff
     style LLMValidate fill:#9C27B0,color:#fff
     style SaveOutput fill:#4CAF50,color:#fff
+    style FinalIntegrate fill:#4CAF50,color:#fff
+    style GenReport fill:#2196F3,color:#fff
 ```
 
 ---
@@ -339,76 +394,7 @@ flowchart TD
 
 ---
 
-## 7️⃣ Leader Mode (v4.0) 智能编排流程
-
-```mermaid
-flowchart TD
-    Start([用户高层目标]) --> MissionDecomp[Mission Decomposer<br/>LLM分解为子任务]
-
-    MissionDecomp --> ParseMissions[解析 Mission列表<br/>type, goal, dependencies]
-    ParseMissions --> ValidateDep[验证依赖关系<br/>检测循环]
-
-    ValidateDep --> DepOK{依赖合法?}
-    DepOK -->|否| Error1([错误: 依赖冲突])
-    DepOK -->|是| TopoSort[拓扑排序 Missions]
-
-    TopoSort --> InitLeader[初始化 Leader Agent<br/>预算控制 + 质量阈值]
-
-    InitLeader --> MissionLoop{还有 Mission?}
-
-    MissionLoop -->|是| NextMission[取出下一个 Mission]
-    MissionLoop -->|否| Integrate
-
-    NextMission --> SelectRole[根据 Mission type<br/>选择角色]
-    SelectRole --> CreateExecutor[创建 Role Executor]
-
-    CreateExecutor --> Monitor[监控执行<br/>实时成本追踪]
-    Monitor --> ExecuteRole[Role Executor执行]
-
-    ExecuteRole --> EvalQuality[评估质量分数<br/>LLM语义评分]
-    EvalQuality --> DecideIntervention{决策干预策略}
-
-    DecideIntervention -->|CONTINUE| Success[Mission成功]
-    DecideIntervention -->|RETRY| RetryCheck{重试 < max_retries?}
-    DecideIntervention -->|ENHANCE| EnhanceMission[增强任务定义<br/>LLM细化需求]
-    DecideIntervention -->|ESCALATE| AddHelper[添加辅助角色<br/>组成临时团队]
-    DecideIntervention -->|TERMINATE| Fail[Mission失败]
-
-    RetryCheck -->|是| Monitor
-    RetryCheck -->|否| Fail
-
-    EnhanceMission --> Monitor
-    AddHelper --> Monitor
-
-    Success --> CollectOutput[收集 Mission输出]
-    CollectOutput --> CheckBudget{预算检查}
-
-    CheckBudget -->|超限| BudgetStop([预算超限停止])
-    CheckBudget -->|正常| MissionLoop
-
-    Fail --> LogFailure[记录失败原因<br/>Markdown日志]
-    LogFailure --> UserDecision{用户决策}
-    UserDecision -->|继续| MissionLoop
-    UserDecision -->|停止| End
-
-    Integrate[Output Integrator<br/>智能集成所有输出]
-    Integrate --> GenDeliverable[生成可交付成果<br/>README + 汇总文档]
-
-    GenDeliverable --> FinalReport[生成执行报告<br/>成本 + 质量 + 决策路径]
-    FinalReport --> End([Leader编排完成])
-
-    Error1 -.-> End
-    BudgetStop -.-> End
-
-    style MissionDecomp fill:#4CAF50,color:#fff
-    style DecideIntervention fill:#FF9800,color:#fff
-    style Integrate fill:#9C27B0,color:#fff
-    style FinalReport fill:#2196F3,color:#fff
-```
-
----
-
-## 8️⃣ 质量验证双层架构
+## 7️⃣ 质量验证双层架构
 
 ```mermaid
 flowchart LR
@@ -450,7 +436,7 @@ flowchart LR
 
 ---
 
-## 9️⃣ 成本控制和预算追踪
+## 8️⃣ 成本控制和预算追踪
 
 ```mermaid
 flowchart TD
@@ -495,7 +481,7 @@ flowchart TD
 
 ---
 
-## 🔟 Markdown Trace日志系统
+## 9️⃣ Markdown Trace日志系统
 
 ```mermaid
 flowchart LR
@@ -635,3 +621,557 @@ gantt
 ✅ **上下文保留**: 避免截断和信息丢失
 
 这是一个完整的生产级AI原生自主工作流系统！🚀
+
+---
+
+## 🔄 架构演进说明 (v4.0 重构)
+
+### 旧架构问题（三层并列）
+
+**问题设计**：
+```
+main.py 三层分支：
+├─ Original Mode (单Agent)
+├─ Team Mode (静态编排)
+└─ Leader Mode (独立编排)  ← ❌ 概念混淆
+```
+
+**核心问题**：
+1. ❌ **概念混淆**：Leader应该是Team的编排者，而非独立的第三种模式
+2. ❌ **职责重叠**：LeaderAgent和TeamOrchestrator都在做编排工作
+3. ❌ **配置复杂**：需要在`leader.enabled`和`initial_prompt`之间做选择
+4. ❌ **维护困难**：三条执行路径，测试和维护成本高
+
+---
+
+### 新架构设计（两层模式）
+
+**清晰设计**：
+```
+main.py 两层决策：
+├─ Original Mode (单Agent迭代)
+└─ Team Mode (Leader作为内部编排核心)
+     └─ Team Leader (v4.0 LeaderAgent)
+          ├─ 任务分解 (MissionDecomposer)
+          ├─ 团队组建 (TeamAssembler)
+          ├─ 依赖排序 (DependencyResolver)
+          ├─ 执行监控 (RoleExecutor调度)
+          ├─ 干预决策 (5种策略)
+          └─ 输出集成 (OutputIntegrator)
+```
+
+**决策逻辑**：
+```python
+# 简化后的模式选择
+if config.task.initial_prompt:
+    run_team_mode_with_leader()  # ✅ Team Mode（自动启用Leader）
+else:
+    run_original_mode()          # ✅ 单Agent模式
+```
+
+---
+
+### Leader职责边界
+
+| 组件 | 旧架构 | 新架构 | 备注 |
+|------|--------|--------|------|
+| **Leader位置** | 独立模式 | Team内部编排者 | ✅ 清晰定位 |
+| **TeamAssembler** | 独立调用 | Leader调用 | ✅ 职责明确 |
+| **DependencyResolver** | 独立调用 | Leader调用 | ✅ 职责明确 |
+| **RoleExecutor** | Team直接调度 | Leader监控调度 | ✅ 增加智能 |
+| **干预策略** | 无 | Leader负责 | ✅ 新增能力 |
+| **输出集成** | 无 | Leader负责 | ✅ 新增能力 |
+
+---
+
+### 配置变化
+
+**旧配置（问题）**：
+```yaml
+# 需要两个开关
+leader:
+  enabled: false  # ❌ 容易混淆
+
+task:
+  initial_prompt: "..."  # ❌ 和leader.enabled冲突
+```
+
+**新配置（清晰）**：
+```yaml
+# 只需一个条件
+task:
+  initial_prompt: "..."  # ✅ 有此字段 → Team Mode（自动启用Leader）
+
+# Leader参数（Team Mode自动使用）
+leader:
+  max_mission_retries: 3
+  quality_threshold: 70.0
+  enable_intervention: true
+```
+
+---
+
+### 架构对比
+
+| 维度 | 旧架构 | 新架构 |
+|------|--------|--------|
+| **模式数量** | 3种 (Original/Team/Leader) | 2种 (Original/Team with Leader) |
+| **概念清晰度** | ⭐⭐ 混淆 | ⭐⭐⭐⭐⭐ 清晰 |
+| **配置复杂度** | ⭐⭐ 两个开关 | ⭐⭐⭐⭐⭐ 一个条件 |
+| **代码维护性** | ⭐⭐ 三条路径 | ⭐⭐⭐⭐⭐ 两条路径 |
+| **职责划分** | ⭐⭐⭐ 部分重叠 | ⭐⭐⭐⭐⭐ 完全清晰 |
+| **用户理解** | ⭐⭐ "Leader是什么?" | ⭐⭐⭐⭐⭐ "Leader编排Team" |
+
+---
+
+### 升级指南
+
+**对于现有用户**：
+
+1. **配置文件更新**：
+   ```yaml
+   # 删除此行：
+   # leader.enabled: false
+
+   # 保留Leader参数：
+   leader:
+     max_mission_retries: 3
+     quality_threshold: 70.0
+     enable_intervention: true
+   ```
+
+2. **模式触发逻辑**：
+   - 之前：`leader.enabled=true` → Leader Mode
+   - 现在：`initial_prompt` 有值 → Team Mode（自动使用Leader）
+
+3. **无需代码修改**：
+   - 角色定义（roles/*.yaml）保持不变
+   - 资源配置（resources/*.yaml）保持不变
+   - MCP服务器配置保持不变
+
+**详细重构文档**：参见 `docs/Architecture-Refactor-v4.0.md`
+
+---
+
+## 📚 相关文档
+
+- **架构重构方案**: `docs/Architecture-Refactor-v4.0.md` - 详细的重构设计和代码实现建议
+- **版本历史**: `CHANGELOG.md` - 完整的版本演进记录
+- **项目说明**: `README.md` - 项目概述和快速开始
+
+---
+
+**文档版本**: v4.1-enhanced
+**更新日期**: 2025-01-22
+**架构变更**: 从三层并列模式重构为两层清晰模式（Team Mode内嵌Leader）+ 生产级增强特性
+
+---
+
+## 🚀 系统增强特性 (v4.1)
+
+基于v4.0架构，新增8个关键维度的生产级增强特性。详见 `docs/System-Enhancements-v4.1.md`
+
+### 增强特性流程图
+
+---
+
+## 🔟 分层预算控制流程
+
+```mermaid
+flowchart TD
+    Start([开始执行]) --> AllocSession[Session预算分配<br/>━━━━━━━━<br/>总预算: $10.00]
+
+    AllocSession --> InitMissions[初始化任务列表<br/>按优先级排序]
+
+    InitMissions --> MissionLoop{遍历任务}
+
+    MissionLoop -->|下一个任务| CheckPriority[检查任务优先级]
+
+    CheckPriority --> AllocMission[分配任务预算<br/>━━━━━━━━<br/>• P1-3: 30% session<br/>• P4-7: 20% session<br/>• P8-10: 10% session]
+
+    AllocMission --> RoleLoop[遍历角色]
+
+    RoleLoop --> AllocRole[分配角色预算<br/>━━━━━━━━<br/>15% mission预算]
+
+    AllocRole --> ExecuteRole[执行角色任务]
+
+    ExecuteRole --> RecordUsage[记录资源使用<br/>• 成本: $X<br/>• Tokens: Y<br/>• 时长: Z分钟]
+
+    RecordUsage --> UpdateBudgets[更新所有层级预算<br/>Action → Role → Mission → Session]
+
+    UpdateBudgets --> CheckBudget{预算检查}
+
+    CheckBudget -->|OK <80%| Continue[继续执行]
+    CheckBudget -->|Warning 80-95%| Warning[⚠️ 预算警告<br/>发送通知]
+    CheckBudget -->|Critical 95-100%| Critical[🔴 预算临界<br/>触发熔断器]
+    CheckBudget -->|Exceeded >100%| Exceeded[❌ 预算超限]
+
+    Warning --> Continue
+    Critical --> CircuitCheck{熔断器检查}
+
+    CircuitCheck -->|失败次数 < 阈值| Continue
+    CircuitCheck -->|失败次数 >= 阈值| CircuitOpen[熔断器OPEN<br/>━━━━━━━━<br/>停止执行]
+
+    Exceeded --> PriorityCheck{有低优先级任务?}
+
+    PriorityCheck -->|是| Downgrade[优先级降级<br/>━━━━━━━━<br/>暂停低优先级任务<br/>释放预算]
+    PriorityCheck -->|否| BudgetStop([预算耗尽停止])
+
+    Downgrade --> Continue
+    Continue --> ActionCheck{需要干预动作?}
+
+    ActionCheck -->|RETRY| AllocRetry[分配Retry预算<br/>━━━━━━━━<br/>第1次: 50%<br/>第2次: 30%<br/>第3次: 10%]
+    ActionCheck -->|ENHANCE| AllocEnhance[分配Enhance预算<br/>━━━━━━━━<br/>20% role预算]
+    ActionCheck -->|ESCALATE| AllocEscalate[分配Helper预算<br/>━━━━━━━━<br/>50% role预算]
+    ActionCheck -->|继续| MissionLoop
+
+    AllocRetry --> ExecuteAction[执行干预动作]
+    AllocEnhance --> ExecuteAction
+    AllocEscalate --> ExecuteAction
+
+    ExecuteAction --> RecordUsage
+
+    CircuitOpen --> PartialDeliver[生成部分交付物]
+    BudgetStop --> PartialDeliver
+
+    PartialDeliver --> End([流程结束])
+
+    style AllocSession fill:#4CAF50,color:#fff
+    style AllocMission fill:#2196F3,color:#fff
+    style AllocRole fill:#FF9800,color:#fff
+    style Warning fill:#FF9800,color:#fff
+    style Critical fill:#f44336,color:#fff
+    style CircuitOpen fill:#f44336,color:#fff
+    style Downgrade fill:#9C27B0,color:#fff
+```
+
+---
+
+## 1️⃣1️⃣ 多维度质量评估流程
+
+```mermaid
+flowchart TD
+    Start([角色执行完成]) --> CollectOutputs[收集输出文件]
+
+    CollectOutputs --> StartEval[初始化多维度评估器<br/>MultiDimEvaluator]
+
+    StartEval --> Parallel{并行评估各维度}
+
+    Parallel -->|维度1| FormatDim[格式验证<br/>━━━━━━━━<br/>• 文件存在性<br/>• 必需内容<br/>• 占位符检查<br/>━━━━━━━━<br/>权重: 15%]
+
+    Parallel -->|维度2| ContentDim[内容完整性<br/>━━━━━━━━<br/>• 最小长度<br/>• 章节完整<br/>• 引用正确<br/>━━━━━━━━<br/>权重: 20%]
+
+    Parallel -->|维度3| LLMDim[LLM语义质量<br/>━━━━━━━━<br/>• Haiku评分<br/>• 问题识别<br/>• 改进建议<br/>━━━━━━━━<br/>权重: 30%]
+
+    Parallel -->|维度4| TestDim[自动化测试<br/>━━━━━━━━<br/>• 运行pytest<br/>• 分析覆盖率<br/>• 解析结果<br/>━━━━━━━━<br/>权重: 20%]
+
+    Parallel -->|维度5| StaticDim[静态检查<br/>━━━━━━━━<br/>• Flake8 lint<br/>• Mypy类型<br/>• 安全扫描<br/>━━━━━━━━<br/>权重: 10%]
+
+    Parallel -->|维度6| SecurityDim[安全检查<br/>━━━━━━━━<br/>• 依赖漏洞<br/>• 代码注入<br/>• 敏感信息<br/>━━━━━━━━<br/>权重: 5%]
+
+    FormatDim --> ScoreFormat[分数: 0-100<br/>+ 证据<br/>+ 问题列表<br/>+ 改进建议]
+    ContentDim --> ScoreContent[分数: 0-100<br/>+ 证据<br/>+ 问题列表<br/>+ 改进建议]
+    LLMDim --> ScoreLLM[分数: 0-100<br/>+ 证据<br/>+ 问题列表<br/>+ 改进建议]
+    TestDim --> ScoreTest[分数: 0-100<br/>+ 覆盖率<br/>+ 通过/失败<br/>+ 改进建议]
+    StaticDim --> ScoreStatic[分数: 0-100<br/>+ Lint错误<br/>+ 类型错误<br/>+ 改进建议]
+    SecurityDim --> ScoreSecurity[分数: 0-100<br/>+ 漏洞列表<br/>+ 风险等级<br/>+ 修复建议]
+
+    ScoreFormat --> Aggregate[汇总评估结果]
+    ScoreContent --> Aggregate
+    ScoreLLM --> Aggregate
+    ScoreTest --> Aggregate
+    ScoreStatic --> Aggregate
+    ScoreSecurity --> Aggregate
+
+    Aggregate --> CalcOverall[计算加权总分<br/>━━━━━━━━<br/>Σ(score × weight)]
+
+    CalcOverall --> GenReplay[生成重放上下文<br/>━━━━━━━━<br/>• Mission定义<br/>• 输入文件<br/>• 评估器配置<br/>• 维度权重]
+
+    GenReplay --> SaveEval[保存评估结果<br/>━━━━━━━━<br/>logs/evaluations/<br/>mission_{timestamp}.json]
+
+    SaveEval --> CheckThreshold{总分 >= 阈值?}
+
+    CheckThreshold -->|是| Pass([评估通过])
+    CheckThreshold -->|否| AnalyzeIssues[分析失败维度]
+
+    AnalyzeIssues --> GenReport[生成详细报告<br/>━━━━━━━━<br/>• 各维度详情<br/>• 优先修复项<br/>• 改进路线图]
+
+    GenReport --> Fail([评估失败<br/>+ 改进建议])
+
+    style FormatDim fill:#2196F3,color:#fff
+    style ContentDim fill:#2196F3,color:#fff
+    style LLMDim fill:#9C27B0,color:#fff
+    style TestDim fill:#4CAF50,color:#fff
+    style StaticDim fill:#FF9800,color:#fff
+    style SecurityDim fill:#f44336,color:#fff
+    style Pass fill:#4CAF50,color:#fff
+    style Fail fill:#f44336,color:#fff
+```
+
+---
+
+## 1️⃣2️⃣ 幂等执行与断点续跑流程
+
+```mermaid
+flowchart TD
+    Start([开始执行任务]) --> LoadState[尝试加载执行状态<br/>execution_state.json]
+
+    LoadState --> StateExists{状态文件存在?}
+
+    StateExists -->|是| ValidateState[验证状态完整性]
+    StateExists -->|否| InitState[初始化新状态]
+
+    ValidateState --> CanResume{可以恢复?}
+
+    CanResume -->|是| Resume[恢复模式<br/>━━━━━━━━<br/>从中断点继续]
+    CanResume -->|否| InitState
+
+    Resume --> LoadCheckpoint[加载检查点<br/>━━━━━━━━<br/>• 已完成任务<br/>• 当前任务索引<br/>• 累计成本]
+
+    LoadCheckpoint --> ResumeFrom[定位恢复点<br/>━━━━━━━━<br/>跳过已完成任务]
+
+    InitState --> StartExec[开始执行]
+    ResumeFrom --> StartExec
+
+    StartExec --> NextMission[取出下一个任务]
+
+    NextMission --> ComputeHash[计算执行哈希<br/>━━━━━━━━<br/>hash(mission_def + context)]
+
+    ComputeHash --> CheckCache{检查幂等缓存}
+
+    CheckCache -->|缓存命中<br/>hash匹配| LoadCache[加载缓存结果<br/>━━━━━━━━<br/>跳过执行]
+    CheckCache -->|缓存未命中| CreateCheckpoint[创建检查点<br/>━━━━━━━━<br/>状态: RUNNING]
+
+    CreateCheckpoint --> SaveCheckpoint1[保存检查点 #1]
+
+    SaveCheckpoint1 --> ExecuteTask[执行任务<br/>━━━━━━━━<br/>RoleExecutor]
+
+    ExecuteTask --> ExecResult{执行结果}
+
+    ExecResult -->|成功| UpdateCheckpoint[更新检查点<br/>━━━━━━━━<br/>状态: COMPLETED<br/>输出: files]
+    ExecResult -->|失败| MarkFailed[更新检查点<br/>━━━━━━━━<br/>状态: FAILED<br/>错误: error]
+
+    ExecResult -->|中断<br/>崩溃/超时| Interrupted([执行中断])
+
+    UpdateCheckpoint --> SaveCheckpoint2[保存检查点 #2]
+    MarkFailed --> SaveCheckpoint3[保存检查点 #3]
+
+    SaveCheckpoint2 --> UpdateState[更新执行状态<br/>━━━━━━━━<br/>• completed_missions++<br/>• current_index++<br/>• total_cost+=cost]
+
+    UpdateState --> SaveState1[原子保存状态<br/>━━━━━━━━<br/>temp → replace]
+
+    SaveCheckpoint3 --> SaveState2[原子保存状态]
+
+    LoadCache --> SaveState3[更新状态<br/>━━━━━━━━<br/>标记为缓存命中]
+
+    SaveState1 --> MoreTasks{还有任务?}
+    SaveState2 --> HandleFailure[处理失败<br/>━━━━━━━━<br/>生成恢复指南]
+    SaveState3 --> MoreTasks
+
+    MoreTasks -->|是| NextMission
+    MoreTasks -->|否| AllDone[所有任务完成]
+
+    HandleFailure --> End([流程结束])
+    AllDone --> End
+
+    Interrupted -.->|用户重启| LoadState
+
+    style Resume fill:#4CAF50,color:#fff,stroke:#2E7D32,stroke-width:2px
+    style LoadCache fill:#FF9800,color:#fff
+    style CreateCheckpoint fill:#2196F3,color:#fff
+    style UpdateCheckpoint fill:#4CAF50,color:#fff
+    style MarkFailed fill:#f44336,color:#fff
+    style SaveState1 fill:#2196F3,color:#fff
+    style Interrupted fill:#9C27B0,color:#fff,stroke:#6A1B9A,stroke-width:2px
+```
+
+---
+
+## 1️⃣3️⃣ 辅助角色治理与退避策略流程
+
+```mermaid
+flowchart TD
+    Start([Leader决策: ESCALATE]) --> CheckLimit{辅助角色限制检查}
+
+    CheckLimit --> TotalCheck{总数 < 5?}
+    TotalCheck -->|否| RejectTotal([拒绝: 超过总数限制])
+    TotalCheck -->|是| MissionCheck{任务级 < 2?}
+
+    MissionCheck -->|否| RejectMission([拒绝: 超过任务限制])
+    MissionCheck -->|是| Approve[允许添加辅助角色]
+
+    Approve --> SelectHelper[选择辅助角色类型<br/>━━━━━━━━<br/>基于主角色能力缺口]
+
+    SelectHelper --> AllocBudget[分配Helper预算<br/>━━━━━━━━<br/>50% 主角色预算]
+
+    AllocBudget --> SetExitCond[设置退场条件<br/>━━━━━━━━<br/>• 质量达标 ≥80%<br/>• 最大迭代 = 3<br/>• 预算耗尽<br/>• 冗余检测]
+
+    SetExitCond --> CreateHelper[创建HelperRole<br/>━━━━━━━━<br/>helper-{id}]
+
+    CreateHelper --> RegisterHelper[注册到治理器<br/>━━━━━━━━<br/>active_helpers<br/>helpers_by_mission]
+
+    RegisterHelper --> ExecHelper[执行Helper任务]
+
+    ExecHelper --> IterCount[迭代计数++]
+
+    IterCount --> GetResult[获取执行结果]
+
+    GetResult --> CheckExit{检查退场条件}
+
+    CheckExit -->|质量 ≥ 80%| ExitQuality[退场: 质量达标<br/>━━━━━━━━<br/>任务成功完成]
+    CheckExit -->|迭代 >= 3| ExitMaxIter[退场: 最大迭代<br/>━━━━━━━━<br/>尽力而为]
+    CheckExit -->|预算耗尽| ExitBudget[退场: 预算耗尽<br/>━━━━━━━━<br/>成本控制]
+    CheckExit -->|检测冗余| ExitRedundant[退场: 与主角色冗余<br/>━━━━━━━━<br/>资源优化]
+    CheckExit -->|继续| NeedRetry{需要重试?}
+
+    NeedRetry -->|是| CalcBackoff[计算退避延迟<br/>━━━━━━━━<br/>策略: EXPONENTIAL]
+
+    CalcBackoff --> BackoffDelay[延迟执行<br/>━━━━━━━━<br/>第1次: 2s<br/>第2次: 4s<br/>第3次: 8s]
+
+    BackoffDelay --> ExecHelper
+
+    NeedRetry -->|否| CollectOutput[收集Helper输出]
+
+    CollectOutput --> MergeOutput[合并到主角色输出]
+
+    MergeOutput --> CheckExit
+
+    ExitQuality --> RemoveHelper[移除Helper<br/>━━━━━━━━<br/>从active_helpers删除]
+    ExitMaxIter --> RemoveHelper
+    ExitBudget --> RemoveHelper
+    ExitRedundant --> RemoveHelper
+
+    RemoveHelper --> LogExit[记录退场日志<br/>━━━━━━━━<br/>helper_id<br/>exit_reason<br/>duration<br/>cost]
+
+    LogExit --> UpdateMain[更新主角色状态]
+
+    UpdateMain --> End([Helper治理完成])
+
+    RejectTotal -.-> End
+    RejectMission -.-> End
+
+    style Approve fill:#4CAF50,color:#fff
+    style CreateHelper fill:#2196F3,color:#fff
+    style ExitQuality fill:#4CAF50,color:#fff
+    style ExitMaxIter fill:#FF9800,color:#fff
+    style ExitBudget fill:#f44336,color:#fff
+    style ExitRedundant fill:#9C27B0,color:#fff
+    style BackoffDelay fill:#FF9800,color:#fff
+```
+
+---
+
+## 1️⃣4️⃣ 结构化追踪系统架构
+
+```mermaid
+graph TB
+    subgraph "应用层"
+        Leader[Leader Agent]
+        Role[Role Executor]
+        Tool[Tool Execution]
+    end
+
+    subgraph "追踪层 (Observability)"
+        Tracer[Structured Tracer]
+        Logger[Structured Logger]
+    end
+
+    subgraph "Trace数据模型"
+        Trace[Trace<br/>━━━━━━━━<br/>trace_id: trace-xxx]
+        Span1[Span: Mission<br/>━━━━━━━━<br/>span_id: span-aaa<br/>operation: execute_mission]
+        Span2[Span: Role<br/>━━━━━━━━<br/>span_id: span-bbb<br/>parent: span-aaa<br/>operation: execute_role]
+        Span3[Span: Tool<br/>━━━━━━━━<br/>span_id: span-ccc<br/>parent: span-bbb<br/>operation: call_tool]
+    end
+
+    subgraph "存储层"
+        JSONL[JSONL文件<br/>━━━━━━━━<br/>trace-xxx.jsonl<br/>流式追加]
+        Metadata[元数据索引<br/>━━━━━━━━<br/>trace_metadata.db]
+    end
+
+    subgraph "查询与分析"
+        Query[Trace查询API<br/>━━━━━━━━<br/>按trace_id<br/>按mission_id<br/>按时间范围]
+        Analytics[成本分析<br/>━━━━━━━━<br/>按维度聚合<br/>趋势分析]
+    end
+
+    Leader -->|start_span| Tracer
+    Role -->|start_span| Tracer
+    Tool -->|start_span| Tracer
+
+    Leader -->|log_event| Logger
+    Role -->|log_event| Logger
+    Tool -->|log_event| Logger
+
+    Tracer --> Trace
+    Trace --> Span1
+    Span1 --> Span2
+    Span2 --> Span3
+
+    Span1 -->|write| JSONL
+    Span2 -->|write| JSONL
+    Span3 -->|write| JSONL
+
+    Tracer -->|index| Metadata
+
+    JSONL -->|read| Query
+    Metadata -->|search| Query
+
+    Query --> Analytics
+
+    style Tracer fill:#4CAF50,color:#fff
+    style Trace fill:#2196F3,color:#fff
+    style JSONL fill:#FF9800,color:#fff
+    style Query fill:#9C27B0,color:#fff
+```
+
+---
+
+## 📊 增强特性总览
+
+| 特性 | 核心价值 | 实施难度 | 优先级 |
+|------|----------|----------|--------|
+| **结构化协议** | 数据规范化、版本化、可校验 | ⭐⭐⭐ | P0 |
+| **多维度评估** | 全面质量保证、可重放 | ⭐⭐⭐⭐ | P0 |
+| **分层预算控制** | 精细成本管理、熔断保护 | ⭐⭐⭐⭐ | P0 |
+| **幂等与恢复** | 断点续跑、防重复执行 | ⭐⭐⭐⭐⭐ | P1 |
+| **资源隔离** | 安全防护、权限最小化 | ⭐⭐⭐ | P1 |
+| **结构化追踪** | 全链路可观测、问题定位 | ⭐⭐⭐⭐ | P0 |
+| **终态策略** | 优雅降级、恢复指导 | ⭐⭐⭐ | P2 |
+| **辅助角色治理** | 资源控制、退避策略 | ⭐⭐⭐ | P1 |
+
+---
+
+## 🎯 实施建议
+
+### 快速开始 (Quick Wins)
+
+1. **结构化追踪** (1周)
+   - 添加trace_id到所有操作
+   - 实现JSONL流式日志
+   - 基础查询API
+
+2. **分层预算控制** (1周)
+   - 实现Session/Mission/Role三级预算
+   - 基础熔断器
+   - 预算警告
+
+3. **多维度评估** (1.5周)
+   - 格式+内容+LLM三维度
+   - 可选测试维度
+   - 评估结果持久化
+
+### 渐进增强 (Progressive Enhancement)
+
+**Week 4-5**: 幂等与恢复
+**Week 6**: 资源隔离
+**Week 7**: 辅助角色治理
+**Week 8**: 终态策略
+
+### 验证与测试
+
+- 每个特性完成后进行集成测试
+- 性能测试（追踪overhead < 5%）
+- 端到端场景验证
+
+---
+
+**详细设计文档**: `docs/System-Enhancements-v4.1.md` 包含完整的Schema定义、代码示例和实现细节

@@ -1,0 +1,131 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+title: SubMission
+description: Leader分解的子任务定义
+
+type: object
+required:
+  - id
+  - type
+  - goal
+  - success_criteria
+  - priority
+  - dependencies
+  - version
+
+properties:
+  id:
+    type: string
+    pattern: "^mission-[0-9a-f]{8}$"
+    description: "任务唯一标识 (如 mission-1a2b3c4d)"
+
+  version:
+    type: string
+    pattern: "^v[0-9]+\\.[0-9]+$"
+    description: "任务定义版本 (如 v1.0, v1.1 用于ENHANCE)"
+
+  type:
+    type: string
+    enum: [research, documentation, development, testing, deployment]
+    description: "任务类型"
+
+  goal:
+    type: string
+    minLength: 50
+    maxLength: 1000
+    description: "任务目标描述"
+
+  success_criteria:
+    type: array
+    minItems: 1
+    maxItems: 10
+    items:
+      type: object
+      required: [criterion, weight, validation_type]
+      properties:
+        criterion:
+          type: string
+          description: "成功标准描述"
+        weight:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: "权重 (所有标准总和=1.0)"
+        validation_type:
+          type: string
+          enum: [file_exists, content_check, test_pass, llm_quality, custom]
+        validation_config:
+          type: object
+          description: "验证配置 (根据validation_type不同)"
+
+  priority:
+    type: integer
+    minimum: 1
+    maximum: 10
+    description: "优先级 (1=最高, 10=最低)"
+
+  dependencies:
+    type: array
+    items:
+      type: string
+      pattern: "^mission-[0-9a-f]{8}$"
+    description: "依赖的任务ID列表"
+
+  resources:
+    type: object
+    properties:
+      tools:
+        type: array
+        items:
+          type: string
+        description: "允许使用的工具列表"
+      mcp_servers:
+        type: array
+        items:
+          type: string
+        description: "允许使用的MCP服务器"
+      max_tokens:
+        type: integer
+        minimum: 1000
+        description: "最大token预算"
+      max_duration_minutes:
+        type: integer
+        minimum: 1
+        description: "最大执行时长"
+
+  budget:
+    type: object
+    required: [max_cost_usd, max_retries]
+    properties:
+      max_cost_usd:
+        type: number
+        minimum: 0.01
+        description: "最大成本预算"
+      max_retries:
+        type: integer
+        minimum: 0
+        maximum: 5
+        description: "最大重试次数"
+      retry_backoff:
+        type: string
+        enum: [linear, exponential, fibonacci]
+        default: exponential
+        description: "重试退避策略"
+
+  metadata:
+    type: object
+    properties:
+      created_at:
+        type: string
+        format: date-time
+      created_by:
+        type: string
+        enum: [leader, user, enhanced]
+      parent_mission:
+        type: string
+        description: "父任务ID (如果是ENHANCE/ESCALATE产生)"
+      tags:
+        type: array
+        items:
+          type: string
+
+additionalProperties: false
