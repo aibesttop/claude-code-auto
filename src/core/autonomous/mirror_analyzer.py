@@ -6,6 +6,7 @@ without polluting the actual working directory.
 
 This is the "soul" of v1.0 autonomous system.
 """
+import os
 import shutil
 import json
 from pathlib import Path
@@ -57,10 +58,10 @@ class MirrorAnalyzer:
 
         mirror_path = self.mirror_base / mirror_name
 
-        # Remove existing mirror
+        # Remove existing mirror (with Windows compatibility)
         if mirror_path.exists():
             logger.debug(f"Removing existing mirror: {mirror_path}")
-            shutil.rmtree(mirror_path)
+            self._remove_mirror_safe(mirror_path)
 
         # Copy work_dir to mirror
         logger.info(f"Creating mirror: {self.work_dir} -> {mirror_path}")
@@ -71,6 +72,44 @@ class MirrorAnalyzer:
 
         logger.info(f"✅ Mirror created: {mirror_path}")
         return mirror_path
+
+    def _remove_mirror_safe(self, path: Path, max_retries: int = 3):
+        """
+        Safely remove mirror directory with Windows file locking handling.
+
+        Args:
+            path: Path to remove
+            max_retries: Maximum number of retry attempts
+        """
+        import time
+        import stat
+
+        def handle_remove_readonly(func, path, exc):
+            """Error handler for Windows readonly files."""
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+
+        for attempt in range(max_retries):
+            try:
+                # Try to remove with readonly handler for Windows
+                shutil.rmtree(path, onerror=handle_remove_readonly)
+                return
+            except PermissionError as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Mirror removal failed (attempt {attempt + 1}/{max_retries}): {e}")
+                    time.sleep(0.5 * (attempt + 1))  # Exponential backoff
+                else:
+                    # Last resort: rename to .old instead of deleting
+                    old_path = path.parent / f"{path.name}.old.{int(time.time())}"
+                    logger.warning(f"Could not remove mirror, renaming to: {old_path}")
+                    try:
+                        path.rename(old_path)
+                    except Exception as rename_error:
+                        logger.error(f"Failed to rename mirror: {rename_error}")
+                        raise
+            except Exception as e:
+                logger.error(f"Unexpected error removing mirror: {e}")
+                raise
 
     def _cleanup_mirror(self, mirror_path: Path):
         """Remove sensitive files from mirror."""
