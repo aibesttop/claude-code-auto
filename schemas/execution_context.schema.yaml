@@ -1,0 +1,95 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+title: ExecutionContext
+description: 角色间传递的上下文快照
+
+type: object
+required:
+  - context_id
+  - version
+  - source_mission
+  - target_mission
+  - snapshot_time
+  - content_type
+  - content
+
+properties:
+  context_id:
+    type: string
+    pattern: "^ctx-[0-9a-f]{8}$"
+    description: "上下文唯一标识"
+
+  version:
+    type: string
+    pattern: "^v[0-9]+\\.[0-9]+$"
+    description: "上下文版本 (每次传递递增)"
+
+  source_mission:
+    type: string
+    description: "来源任务ID"
+
+  target_mission:
+    type: string
+    description: "目标任务ID"
+
+  snapshot_time:
+    type: string
+    format: date-time
+    description: "快照时间"
+
+  content_type:
+    type: string
+    enum: [full, summary, reference]
+    description: "内容类型"
+
+  content:
+    oneOf:
+      - type: object
+        description: "full - 完整内容"
+        properties:
+          files:
+            type: array
+            items:
+              type: object
+              properties:
+                path:
+                  type: string
+                content:
+                  type: string
+                hash:
+                  type: string
+                  description: "SHA256 hash用于验证"
+
+      - type: object
+        description: "summary - 摘要+引用"
+        properties:
+          summary_text:
+            type: string
+            maxLength: 2000
+          reference_path:
+            type: string
+            description: "完整内容存储路径"
+          hash:
+            type: string
+
+      - type: object
+        description: "reference - 仅引用"
+        properties:
+          reference_path:
+            type: string
+          hash:
+            type: string
+
+  metadata:
+    type: object
+    properties:
+      total_files:
+        type: integer
+      total_size_bytes:
+        type: integer
+      compression:
+        type: string
+        enum: [none, gzip, zstd]
+      encryption:
+        type: boolean
+
+additionalProperties: false
