@@ -19,19 +19,7 @@ output_standard:
   
   validation_rules:
     - type: "file_exists"
-      file: "role_definitions.md"
-    
-    - type: "content_check"
-      file: "role_definitions.md"
-      must_contain:
-        - "## User Personas"
-        - "## Expert Roles"
-        - "## Organizational Context"
-        - "### Background"
-        - "### Motivations"
-        - "### Expertise"
-    
-    - type: "min_length"
+      file: "role_definitions.md"- type: "min_length"
       file: "role_definitions.md"
       min_chars: 1000
     

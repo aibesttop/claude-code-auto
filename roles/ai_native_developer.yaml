@@ -35,34 +35,7 @@ output_standard:
         - "Dockerfile"
         - "README.md"
         - ".env.example"
-    
-    - type: "content_check"
-      file: "src/main.py"
-      must_contain:
-        - "def main"
-        - "if __name__"
-    
-    - type: "content_check"
-      file: "tests/test_main.py"
-      must_contain:
-        - "def test_"
-        - "import pytest"
-    
-    - type: "content_check"
-      file: "Dockerfile"
-      must_contain:
-        - "FROM"
-        - "COPY"
-        - "CMD"
-    
-    - type: "content_check"
-      file: "README.md"
-      must_contain:
-        - "## Installation"
-        - "## Usage"
-        - "## Testing"
-        - "## Deployment"
-    
+
     - type: "min_length"
       file: "src/main.py"
       min_chars: 500

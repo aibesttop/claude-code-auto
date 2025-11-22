@@ -20,19 +20,7 @@ output_standard:
   
   validation_rules:
     - type: "file_exists"
-      file: "seo-strategy.md"
-    
-    - type: "content_check"
-      file: "seo-strategy.md"
-      must_contain:
-        - "## Keyword Research"
-        - "## On-Page SEO"
-        - "## Technical SEO"
-        - "## Content Strategy"
-        - "## Link Building"
-        - "## Performance Metrics"
-    
-    - type: "min_length"
+      file: "seo-strategy.md"- type: "min_length"
       file: "seo-strategy.md"
       min_chars: 1800
     

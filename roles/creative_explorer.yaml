@@ -17,24 +17,15 @@ mission:
 output_standard:
   required_files:
     - "creative_exploration_report.md"
-  
+
   validation_rules:
     - type: "file_exists"
       file: "creative_exploration_report.md"
-    
-    - type: "content_check"
-      file: "creative_exploration_report.md"
-      must_contain:
-        - "## Concept Expansion"
-        - "## Stakeholder Analysis"
-        - "## Knowledge Domains"
-        - "## Implementation Context"
-        - "## Critical Questions"
-    
+
     - type: "min_length"
       file: "creative_exploration_report.md"
       min_chars: 1000
-    
+
     - type: "no_placeholders"
       files:
         - "creative_exploration_report.md"

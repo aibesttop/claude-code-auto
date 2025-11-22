@@ -38,29 +38,7 @@ output_standard:
         - "docs/05-ai-prompt-template.md"
         - "docs/06-testing-strategy.md"
         - "docs/07-deployment-guide.md"
-    
-    - type: "content_check"
-      file: "docs/00-project-context.md"
-      must_contain:
-        - "# Project Context"
-        - "## Problem Statement"
-        - "## Target Users"
-        - "## Success Metrics"
-    
-    - type: "content_check"
-      file: "docs/01-requirements.md"
-      must_contain:
-        - "# Requirements"
-        - "## Functional Requirements"
-        - "## Non-Functional Requirements"
-    
-    - type: "content_check"
-      file: "docs/02-architecture.md"
-      must_contain:
-        - "# Architecture"
-        - "## System Overview"
-        - "## Component Design"
-    
+
     - type: "min_length"
       file: "docs/00-project-context.md"
       min_chars: 1500

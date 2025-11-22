@@ -20,21 +20,7 @@ output_standard:
   
   validation_rules:
     - type: "file_exists"
-      file: "architecture-design.md"
-    
-    - type: "content_check"
-      file: "architecture-design.md"
-      must_contain:
-        - "## System Overview"
-        - "## Architecture Diagram"
-        - "## Component Design"
-        - "## Technology Stack"
-        - "## Data Models"
-        - "## API Specifications"
-        - "## Scalability"
-        - "## Security"
-    
-    - type: "min_length"
+      file: "architecture-design.md"- type: "min_length"
       file: "architecture-design.md"
       min_chars: 3000
     

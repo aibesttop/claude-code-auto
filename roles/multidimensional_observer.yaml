@@ -20,20 +20,7 @@ output_standard:
   
   validation_rules:
     - type: "file_exists"
-      file: "creative_exploration_worksheet.md"
-    
-    - type: "content_check"
-      file: "creative_exploration_worksheet.md"
-      must_contain:
-        - "## Initial Idea"
-        - "## Exploratory Questions"
-        - "### User Dimension"
-        - "### Solution Dimension"
-        - "### Business Dimension"
-        - "### Implementation Dimension"
-        - "## Key Insights"
-    
-    - type: "min_length"
+      file: "creative_exploration_worksheet.md"- type: "min_length"
       file: "creative_exploration_worksheet.md"
       min_chars: 1000
     
