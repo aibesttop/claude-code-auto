@@ -113,14 +113,24 @@ class MirrorAnalyzer:
         """
         # Create mirror for analysis
         mirror_name = f"{role_name}_mirror" if role_name else "analysis_mirror"
+
+        logger.info(f"\n{'='*70}")
+        logger.info(f"🔍 AI AUTONOMOUS ANALYSIS - Mirror Environment")
+        logger.info(f"{'='*70}")
+        logger.info(f"📁 Creating mirror for isolated analysis...")
+
         mirror_path = self.create_mirror(mirror_name)
+        logger.info(f"✅ Mirror created: {mirror_path}")
+        logger.info(f"🎯 Analyzing goal: {goal[:100]}{'...' if len(goal) > 100 else ''}")
+        if role_name:
+            logger.info(f"👤 Role: {role_name}")
 
         # Construct AI analysis prompt
         prompt = self._build_analysis_prompt(goal, role_name, context)
-
-        logger.info(f"🔍 AI analyzing in mirror: {mirror_path}")
+        logger.info(f"📝 AI analysis prompt prepared ({len(prompt)} chars)")
 
         try:
+            logger.info(f"🤖 Invoking Claude AI for analysis...")
             # Run Claude in mirror environment
             response_text, _ = await run_claude_prompt(
                 prompt=prompt,
@@ -130,16 +140,60 @@ class MirrorAnalyzer:
                 timeout=timeout
             )
 
-            # Parse AI's JSON response
-            completed, next_action, analysis = self._parse_ai_response(response_text)
+            logger.info(f"✅ AI analysis completed, parsing response...")
 
-            logger.info(f"AI判断: {'✅ 已完成' if completed else '⏳ 需继续'}")
-            logger.info(f"AI分析: {analysis[:100]}...")
+            # Parse AI's JSON response
+            completed, next_action, analysis, result_dict = self._parse_ai_response(response_text)
+
+            # Extract additional details
+            quality_score = result_dict.get("quality_score", 0)
+            improvement_suggestions = result_dict.get("improvement_suggestions", [])
+
+            # Display detailed analysis results
+            logger.info(f"\n{'─'*70}")
+            logger.info(f"📊 AI JUDGMENT RESULTS")
+            logger.info(f"{'─'*70}")
+            logger.info(f"🎯 Quality Score: {quality_score}/10")
+
+            if quality_score >= 8:
+                logger.info(f"✅ Status: EXCELLENT - Task can be completed")
+            elif quality_score >= 6:
+                logger.info(f"⚠️  Status: GOOD - Minor improvements suggested")
+            elif quality_score >= 4:
+                logger.info(f"❌ Status: AVERAGE - Significant improvements needed")
+            else:
+                logger.info(f"🔴 Status: POOR - Major rework required")
+
+            logger.info(f"")
+            logger.info(f"AI Decision: {'✅ COMPLETED' if completed else '⏳ CONTINUE IMPROVING'}")
+            logger.info(f"")
+            logger.info(f"📝 AI Analysis:")
+            # Format analysis text with indentation
+            for line in analysis.split('\n'):
+                if line.strip():
+                    logger.info(f"   {line.strip()}")
+
+            if not completed:
+                logger.info(f"")
+                logger.info(f"💡 Next Action Suggested:")
+                logger.info(f"   {next_action}")
+
+            if improvement_suggestions:
+                logger.info(f"")
+                logger.info(f"🔧 Improvement Suggestions:")
+                for i, suggestion in enumerate(improvement_suggestions, 1):
+                    logger.info(f"   {i}. {suggestion}")
+
+            logger.info(f"{'='*70}\n")
 
             return completed, next_action, analysis
 
         except Exception as e:
-            logger.error(f"AI分析失败: {e}")
+            logger.error(f"\n{'!'*70}")
+            logger.error(f"❌ AI ANALYSIS FAILED")
+            logger.error(f"{'!'*70}")
+            logger.error(f"Error: {e}")
+            logger.error(f"{'!'*70}\n")
             # Fallback: assume not completed
             return False, "AI分析出错，请检查工作目录并继续", str(e)
 
@@ -191,12 +245,12 @@ class MirrorAnalyzer:
 """
         return prompt
 
-    def _parse_ai_response(self, response_text: str) -> Tuple[bool, str, str]:
+    def _parse_ai_response(self, response_text: str) -> Tuple[bool, str, str, Dict]:
         """
         解析AI的JSON响应
 
         Returns:
-            (completed, next_action, analysis)
+            (completed, next_action, analysis, result_dict)
         """
         try:
             # Extract JSON from response
@@ -205,7 +259,7 @@ class MirrorAnalyzer:
 
             if start_idx == -1 or end_idx == 0:
                 logger.warning("AI响应中未找到JSON格式")
-                return False, "请检查并改进工作", "响应格式错误"
+                return False, "请检查并改进工作", "响应格式错误", {}
 
             json_str = response_text[start_idx:end_idx]
             result = json.loads(json_str)
@@ -216,26 +270,22 @@ class MirrorAnalyzer:
             analysis = result.get("analysis", "")
             quality_score = result.get("quality_score", 0)
 
-            # Log quality score
-            if quality_score:
-                logger.info(f"AI质量评分: {quality_score}/10")
-
             # Ensure completed only if quality is high enough
             if completed and quality_score < 8:
-                logger.warning(f"质量评分{quality_score}不足8分，强制设为未完成")
+                logger.debug(f"⚠️ Quality score {quality_score} < 8, overriding completed to False")
                 completed = False
                 if not next_action:
                     next_action = "提升质量至8分以上"
 
-            return completed, next_action, analysis
+            return completed, next_action, analysis, result
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON解析失败: {e}")
-            logger.debug(f"原始响应: {response_text}")
-            return False, "JSON解析错误，请继续工作", str(e)
+            logger.debug(f"原始响应: {response_text[:500]}...")
+            return False, "JSON解析错误，请继续工作", str(e), {}
         except Exception as e:
             logger.error(f"响应解析异常: {e}")
-            return False, str(e), "解析异常"
+            return False, str(e), "解析异常", {}
 
     def cleanup_mirrors(self):
         """清理所有镜像目录"""
@@ -264,7 +314,7 @@ async def ai_judge_task_completion(
     """
     analyzer = MirrorAnalyzer(work_dir)
 
-    completed, next_action, analysis = await analyzer.ai_analyze_progress(
+    completed, next_action, analysis, _ = await analyzer.ai_analyze_progress(
         goal=goal,
         role_name=role_name,
         context=context

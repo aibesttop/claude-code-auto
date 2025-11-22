@@ -235,51 +235,54 @@ class RoleExecutor:
 
         while iteration < max_iterations:
             iteration += 1
-            logger.info(f"\n{'='*60}")
-            logger.info(f"🔄 Autonomous Iteration {iteration}/{max_iterations}")
-            logger.info(f"{'='*60}")
+            logger.info(f"\n{'='*80}")
+            logger.info(f"🔄 AUTONOMOUS ITERATION {iteration}/{max_iterations}")
+            logger.info(f"{'='*80}")
 
             # Execute task
             try:
+                logger.info(f"🚀 Executing task...")
                 result = await self.executor.execute_task(task)
-                logger.info(f"✅ Task execution completed")
+                logger.info(f"✅ Task execution completed successfully")
             except Exception as e:
-                logger.error(f"❌ Executor failed: {e}")
+                logger.error(f"❌ Task execution failed: {e}")
                 task = f"Previous attempt failed with error: {e}\n\nPlease try again and fix the issue.\n\n{task}"
                 continue
 
             # AI Analysis in Mirror (v1.0 core mechanism)
-            logger.info(f"🔍 AI analyzing task completion in mirror environment...")
+            # The detailed logging happens inside mirror_analyzer.ai_analyze_progress()
 
             try:
-                completed, next_action, analysis = await self.mirror_analyzer.ai_analyze_progress(
+                completed, next_action, analysis, result_dict = await self.mirror_analyzer.ai_analyze_progress(
                     goal=mission.goal,
                     role_name=self.role.name,
                     context=self._format_context(context) if context else None
                 )
 
+                # Extract quality score from result dict
+                quality_score = result_dict.get("quality_score", 0)
+                if quality_score:
+                    quality_scores.append(quality_score)
+
                 ai_judgment = {
                     "completed": completed,
                     "next_action": next_action,
                     "analysis": analysis,
+                    "quality_score": quality_score,
                     "iteration": iteration
                 }
 
-                # Extract quality score if available
-                # (The mirror analyzer returns this in the analysis JSON)
-                quality_score = self._extract_quality_score(analysis)
-                if quality_score:
-                    quality_scores.append(quality_score)
-                    logger.info(f"📊 Quality Score: {quality_score}/10")
-
-                logger.info(f"AI判断: {'✅ 满意，任务完成' if completed else '⏳ 需要继续改进'}")
-                logger.info(f"AI分析: {analysis[:200]}...")
-
                 if completed:
-                    logger.info(f"\n🎉 AI判断任务已完成！")
-                    logger.info(f"   总迭代次数: {iteration}")
+                    logger.info(f"\n{'🎉'*40}")
+                    logger.info(f"✅ AUTONOMOUS MISSION COMPLETED!")
+                    logger.info(f"{'🎉'*40}")
+                    logger.info(f"📊 Total Iterations: {iteration}")
                     if quality_scores:
-                        logger.info(f"   质量提升: {quality_scores[0]}/10 → {quality_scores[-1]}/10")
+                        initial_score = quality_scores[0]
+                        final_score = quality_scores[-1]
+                        improvement = final_score - initial_score
+                        logger.info(f"📈 Quality Improvement: {initial_score}/10 → {final_score}/10 (+{improvement})")
+                    logger.info(f"{'='*80}\n")
 
                     return {
                         "success": True,
@@ -289,8 +292,10 @@ class RoleExecutor:
                         "quality_scores": quality_scores
                     }
                 else:
-                    # AI suggests next action
-                    logger.info(f"💡 AI建议下一步: {next_action[:150]}...")
+                    # AI suggests continuing - build next iteration task
+                    logger.info(f"\n{'─'*80}")
+                    logger.info(f"⏭️  Preparing next iteration based on AI feedback...")
+                    logger.info(f"{'─'*80}\n")
 
                     # Build next iteration task based on AI's suggestion
                     task = f"""
