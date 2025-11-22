@@ -95,7 +95,8 @@ async def run_leader_mode(config, work_dir, logger, event_store, cost_tracker, s
         # Execute with Leader
         result = await leader.execute(
             goal=config.task.goal,
-            session_id=session_id
+            session_id=session_id,
+            context=config.task.initial_prompt if config.task.initial_prompt else None
         )
 
         if result['success']:

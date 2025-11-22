@@ -124,13 +124,19 @@ class LeaderAgent:
         if budget_limit_usd:
             logger.info(f"   Budget limit: ${budget_limit_usd:.2f}")
 
-    async def execute(self, goal: str, session_id: str) -> Dict[str, Any]:
+    async def execute(
+        self,
+        goal: str,
+        session_id: str,
+        context: str = None
+    ) -> Dict[str, Any]:
         """
         Main execution flow.
 
         Args:
             goal: User's high-level goal
             session_id: Unique session identifier
+            context: Optional context/background (e.g., initial_prompt from config)
 
         Returns:
             {
@@ -143,6 +149,8 @@ class LeaderAgent:
         logger.info(f"🎯 LEADER AGENT - Starting Execution")
         logger.info(f"{'='*70}")
         logger.info(f"Goal: {goal}")
+        if context:
+            logger.info(f"Context: {context[:100]}...")
         logger.info(f"Session: {session_id}")
 
         start_time = time.time()
@@ -152,7 +160,7 @@ class LeaderAgent:
         logger.info(f"📋 Step 1: Mission Decomposition")
         logger.info(f"{'='*70}")
 
-        missions = await self.mission_decomposer.decompose(goal)
+        missions = await self.mission_decomposer.decompose(goal, context=context)
         logger.info(f"✅ Created {len(missions)} missions")
         for i, mission in enumerate(missions, 1):
             logger.info(f"   {i}. [{mission.type}] {mission.goal}")
