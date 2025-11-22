@@ -130,92 +130,86 @@ class ExecutorAgent:
         self.current_task = task_description
         self.react_history = []
 
-        # Switch to work directory for tool execution
-        import os
-        original_cwd = os.getcwd()
-        work_dir_path = Path(self.work_dir)
+        # Ensure work directory exists and get absolute path
+        work_dir_path = Path(self.work_dir).resolve()
         work_dir_path.mkdir(parents=True, exist_ok=True)
-        os.chdir(self.work_dir)
-        logger.info(f"📁 Switched to work directory: {self.work_dir}")
+        logger.info(f"📁 Work directory: {work_dir_path}")
 
-        try:
-            tool_desc = self._get_tool_descriptions()
+        tool_desc = self._get_tool_descriptions()
 
-            persona_prompt = self.persona_engine.get_system_prompt()
-            base_system_prompt = REACT_SYSTEM_PROMPT.format(tool_descriptions=tool_desc)
-            full_system_prompt = f"{persona_prompt}\n\n{base_system_prompt}"
+        persona_prompt = self.persona_engine.get_system_prompt()
+        base_system_prompt = REACT_SYSTEM_PROMPT.format(tool_descriptions=tool_desc)
 
-            history = [
-                f"System: {full_system_prompt}",
-                f"Task: {task_description}"
-            ]
+        # Add work directory instruction to system prompt
+        work_dir_instruction = f"\n\n## Working Directory\nAll file operations should use paths relative to or within: {work_dir_path}\nWhen using write_file or read_file, use paths like '{work_dir_path}/filename.md'"
+        full_system_prompt = f"{persona_prompt}\n\n{base_system_prompt}{work_dir_instruction}"
 
-            current_prompt = "\n\n".join(history)
-            step = 0
+        history = [
+            f"System: {full_system_prompt}",
+            f"Task: {task_description}"
+        ]
 
-            while step < self.max_steps:
-                step += 1
-                logger.info(f"🔄 ReAct Step {step}/{self.max_steps}")
+        current_prompt = "\n\n".join(history)
+        step = 0
 
+        while step < self.max_steps:
+            step += 1
+            logger.info(f"🔄 ReAct Step {step}/{self.max_steps}")
+
+            try:
+                response_text, _ = await run_claude_prompt(
+                    current_prompt,
+                    self.work_dir,
+                    model=self.model,
+                    permission_mode=self.permission_mode,
+                    timeout=self.timeout_seconds,
+                    max_retries=self.max_retries,
+                    retry_delay=self.retry_delay,
+                )
+
+                # Record for trace
+                self.react_history.append(response_text)
+
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.error(f"Executor Claude query failed: {exc}")
+                return f"Error: {exc}"
+
+            logger.debug(f"Claude Response:\n{response_text}")
+
+            if "Final Answer:" in response_text:
+                final_answer = response_text.split("Final Answer:")[1].strip()
+                logger.info(f"Task Completed: {final_answer}")
+                return final_answer
+
+            action, args = self._parse_action(response_text)
+
+            if action and args is not None:
+                logger.info(f"🛠️ Calling Tool: {action}")
+                result = None
                 try:
-                    response_text, _ = await run_claude_prompt(
-                        current_prompt,
-                        self.work_dir,
-                        model=self.model,
-                        permission_mode=self.permission_mode,
-                        timeout=self.timeout_seconds,
-                        max_retries=self.max_retries,
-                        retry_delay=self.retry_delay,
-                    )
+                    result = registry.execute(action, args)
+                    observation = f"\nObservation: {result}\n"
+                except Exception as e:  # pylint: disable=broad-except
+                    observation = f"\nObservation: Error executing tool: {str(e)}\n"
 
-                    # Record for trace
-                    self.react_history.append(response_text)
+                logger.debug(f"Tool Result: {result}")
 
-                except Exception as exc:  # pylint: disable=broad-except
-                    logger.error(f"Executor Claude query failed: {exc}")
-                    return f"Error: {exc}"
+                history.append(response_text.strip())
+                history.append(observation.strip())
+                current_prompt = "\n\n".join(history)
 
-                logger.debug(f"Claude Response:\n{response_text}")
-
-                if "Final Answer:" in response_text:
-                    final_answer = response_text.split("Final Answer:")[1].strip()
-                    logger.info(f"Task Completed: {final_answer}")
-                    return final_answer
-
-                action, args = self._parse_action(response_text)
-
-                if action and args is not None:
-                    logger.info(f"🛠️ Calling Tool: {action}")
-                    result = None
-                    try:
-                        result = registry.execute(action, args)
-                        observation = f"\nObservation: {result}\n"
-                    except Exception as e:  # pylint: disable=broad-except
-                        observation = f"\nObservation: Error executing tool: {str(e)}\n"
-
-                    logger.debug(f"Tool Result: {result}")
-
+            else:
+                if "Thought:" in response_text and not action:
                     history.append(response_text.strip())
-                    history.append(observation.strip())
+                    history.append("System: I did not see a valid 'Action:' and 'Action Input:'. Please format your tool call correctly.")
+                    current_prompt = "\n\n".join(history)
+                else:
+                    logger.warning("⚠️ No action detected and no Final Answer.")
+                    history.append(response_text.strip())
+                    history.append("System: Please continue. If done, say 'Final Answer:'.")
                     current_prompt = "\n\n".join(history)
 
-                else:
-                    if "Thought:" in response_text and not action:
-                        history.append(response_text.strip())
-                        history.append("System: I did not see a valid 'Action:' and 'Action Input:'. Please format your tool call correctly.")
-                        current_prompt = "\n\n".join(history)
-                    else:
-                        logger.warning("⚠️ No action detected and no Final Answer.")
-                        history.append(response_text.strip())
-                        history.append("System: Please continue. If done, say 'Final Answer:'.")
-                        current_prompt = "\n\n".join(history)
-
-            return "Error: Max steps reached without completion."
-
-        finally:
-            # Restore original working directory
-            os.chdir(original_cwd)
-            logger.info(f"📁 Restored working directory: {original_cwd}")
+        return "Error: Max steps reached without completion."
 
     def export_react_trace(
         self,
