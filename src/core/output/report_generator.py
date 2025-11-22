@@ -80,6 +80,10 @@ class ReportGenerator:
         # 时间线
         lines.extend(self._generate_timeline(output))
 
+        # 干预决策日志（Leader模式）
+        if output.intervention_history:
+            lines.extend(self._generate_intervention_log(output))
+
         # 交付物清单
         lines.extend(self._generate_deliverables_list(output))
 
@@ -394,6 +398,87 @@ class ReportGenerator:
             )
 
         lines.extend(["", "---", ""])
+
+        return lines
+
+    def _generate_intervention_log(self, output) -> list:
+        """生成干预决策日志（Leader模式）"""
+        lines = [
+            "## 🧠 Leader干预决策日志",
+            "",
+            f"**总干预次数**: {len(output.intervention_history)}",
+            ""
+        ]
+
+        if not output.intervention_history:
+            lines.append("*无干预记录*")
+            lines.extend(["", "---", ""])
+            return lines
+
+        # 统计干预类型
+        intervention_stats = {}
+        for intervention in output.intervention_history:
+            action = intervention.get('action', 'unknown')
+            intervention_stats[action] = intervention_stats.get(action, 0) + 1
+
+        lines.extend([
+            "### 干预类型统计",
+            "",
+            "| 干预类型 | 次数 |",
+            "|---------|------|"
+        ])
+
+        action_icons = {
+            "continue": "✅ 继续",
+            "retry": "🔁 重试",
+            "enhance": "⚡ 增强",
+            "escalate": "⚠️ 升级",
+            "terminate": "❌ 终止"
+        }
+
+        for action, count in intervention_stats.items():
+            action_label = action_icons.get(action, action)
+            lines.append(f"| {action_label} | {count} |")
+
+        lines.extend([
+            "",
+            "### 详细干预记录",
+            ""
+        ])
+
+        # 按任务分组显示
+        mission_interventions = {}
+        for intervention in output.intervention_history:
+            mission_id = intervention.get('mission_id', 'unknown')
+            if mission_id not in mission_interventions:
+                mission_interventions[mission_id] = []
+            mission_interventions[mission_id].append(intervention)
+
+        for mission_id, interventions in mission_interventions.items():
+            lines.extend([
+                f"#### 任务: {mission_id}",
+                ""
+            ])
+
+            for i, intervention in enumerate(interventions, 1):
+                action = intervention.get('action', 'unknown')
+                action_label = action_icons.get(action, action)
+                reason = intervention.get('reason', 'N/A')
+                iteration = intervention.get('iteration', 'N/A')
+                role = intervention.get('role', 'N/A')
+
+                timestamp = intervention.get('timestamp')
+                time_str = datetime.fromtimestamp(timestamp).strftime('%H:%M:%S') if timestamp else 'N/A'
+
+                lines.extend([
+                    f"{i}. **{action_label}** (迭代 {iteration})",
+                    f"   - **角色**: {role}",
+                    f"   - **原因**: {reason}",
+                    f"   - **时间**: {time_str}",
+                    ""
+                ])
+
+        lines.extend(["---", ""])
 
         return lines
 

@@ -33,7 +33,9 @@ class RoleExecutor:
         use_planner: bool = False,
         model: Optional[str] = None,
         timeout_seconds: int = 300,
-        permission_mode: str = "bypassPermissions"
+        permission_mode: str = "bypassPermissions",
+        skill_prompt: Optional[str] = None,
+        allowed_tools: Optional[List[str]] = None
     ):
         """
         Initialize the role executor.
@@ -47,12 +49,16 @@ class RoleExecutor:
             model: Model to use for planner (if use_planner=True)
             timeout_seconds: Timeout for planner calls
             permission_mode: Permission mode for planner
+            skill_prompt: Additional skill prompt for role enhancement
+            allowed_tools: List of allowed tools (None = all tools allowed)
         """
         self.role = role
         self.executor = executor_agent
         self.work_dir = Path(work_dir)
         self.session_id = session_id or "unknown"
         self.use_planner = use_planner
+        self.skill_prompt = skill_prompt
+        self.allowed_tools = allowed_tools
 
         # Estimate task complexity for adaptive validation
         self.task_complexity = self._estimate_task_complexity(role.mission.goal)
@@ -329,14 +335,32 @@ class RoleExecutor:
         context_str = self._format_context(context) if context else "No previous context."
         criteria_str = "\n".join(f"- {c}" for c in mission.success_criteria)
         required_files_str = "\n".join(f"- {f}" for f in self.role.output_standard.required_files)
-        
+
         template_info = ""
         if self.role.output_standard.template:
             template_info = f"\n\nYou MUST follow the standard defined in: {self.role.output_standard.template}"
-        
+
+        # Add skill prompt if provided (from ResourceRegistry)
+        skill_section = ""
+        if self.skill_prompt:
+            skill_section = f"""
+## Role Enhancement
+{self.skill_prompt}
+"""
+
+        # Add allowed tools information
+        tools_section = ""
+        if self.allowed_tools:
+            tools_list = "\n".join(f"- {tool}" for tool in self.allowed_tools)
+            tools_section = f"""
+## Available Tools
+You should primarily use the following tools for this task:
+{tools_list}
+"""
+
         return f"""
 # Mission: {mission.goal}
-
+{skill_section}
 ## Success Criteria
 {criteria_str}
 
@@ -346,17 +370,22 @@ class RoleExecutor:
 ## Output Standard{template_info}
 
 Working Directory: {self.work_dir}
-IMPORTANT: You must write all files to the directory '{self.work_dir}'.
-Example: write_file("{self.work_dir}/example.md", ...)
+IMPORTANT: Use RELATIVE paths for all file operations.
+- Correct: write_file("market-research.md", ...)
+- Correct: write_file("docs/analysis.md", ...)
+- WRONG: write_file("{self.work_dir}/market-research.md", ...)
+- WRONG: write_file("demo_act/market-research.md", ...)
 
-Required files:
+The working directory is already set to {self.work_dir}, so just use filenames directly.
+
+Required files (use these exact filenames):
 {required_files_str}
-
+{tools_section}
 ## Instructions
 1. Complete all success criteria
-2. Generate all required files in '{self.work_dir}'
+2. Generate all required files using RELATIVE paths
 3. Ensure outputs meet validation rules
-4. Use the tools available to you
+4. Use the appropriate tools for this task type
 """
     
     def _build_retry_task(self, errors: list) -> str:
@@ -371,7 +400,8 @@ Required files:
 ## Instructions
 Fix the above issues and ensure all validation rules pass.
 Do NOT regenerate everything, just fix the specific issues.
-IMPORTANT: Write files to '{self.work_dir}'.
+IMPORTANT: Use RELATIVE paths only (e.g., "filename.md", not "{self.work_dir}/filename.md").
+The working directory is already set to: {self.work_dir}
 """
     
     async def _validate_outputs(self) -> Dict[str, Any]:

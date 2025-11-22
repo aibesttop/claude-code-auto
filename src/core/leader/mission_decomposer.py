@@ -56,13 +56,20 @@ class MissionDecomposer:
 
 Your task: Break down the goal into concrete, executable sub-missions.
 
+⚠️ CRITICAL: Your sub-missions MUST be directly related to the user's goal below.
+- DO NOT create generic examples unrelated to the user's domain
+- DO NOT use topics from other domains (e.g., if user asks about comics, don't talk about AI/ML)
+- STAY FOCUSED on the exact domain/topic/market the user specified
+- Use the user's exact terminology and context
+
 Guidelines:
 1. Each sub-mission should be independent and actionable
-2. Identify mission type: "market_research", "documentation", "code_generation", "architecture_design", "seo_strategy", etc.
+2. Identify mission type: "market_research", "documentation", "code_generation", "architecture_design", "seo_strategy", "creative_exploration", etc.
 3. Define clear success criteria (measurable outcomes)
 4. Specify requirements (what's needed to complete)
 5. Identify dependencies (which missions must complete first)
 6. Estimate relative priority (1=low, 5=high)
+7. ENSURE the goal text directly addresses the user's specific domain/topic/product
 
 Output Format (JSON):
 {{
@@ -70,39 +77,55 @@ Output Format (JSON):
     {{
       "id": "mission_1",
       "type": "market_research",
-      "goal": "Complete in-depth market research...",
-      "requirements": ["web access", "search capability"],
-      "success_criteria": ["Identify 3+ user segments", "Analyze 5+ competitors"],
+      "goal": "YOUR SPECIFIC GOAL HERE - MUST MATCH USER'S DOMAIN",
+      "requirements": ["relevant requirement 1", "relevant requirement 2"],
+      "success_criteria": ["measurable criterion 1", "measurable criterion 2"],
       "dependencies": [],
       "priority": 5
-    }},
-    ...
+    }}
   ]
 }}
+
+Example (if user asks about "comic app opportunities"):
+- ✅ GOOD: "goal": "Conduct market research on comic reading apps in mobile market..."
+- ❌ BAD: "goal": "Complete in-depth market research..." (too generic, no domain specified)
+- ❌ BAD: "goal": "Research AI agent architecture..." (wrong domain!)
 
 User Goal:
 {goal}
 
-Analyze and decompose this goal into sub-missions:"""
+Now decompose this SPECIFIC goal into sub-missions. Remember: STAY ON THE USER'S TOPIC!"""
 
     def __init__(self, model: str = "sonnet", work_dir: str = "."):
         self.model = model
         self.work_dir = work_dir
 
-    async def decompose(self, goal: str) -> List[SubMission]:
+    async def decompose(
+        self,
+        goal: str,
+        context: str = None
+    ) -> List[SubMission]:
         """
         Decompose a complex goal into sub-missions.
 
         Args:
             goal: User's high-level goal
+            context: Optional context/background information
 
         Returns:
             List of SubMission objects
         """
         logger.info(f"🎯 Decomposing goal: {goal}")
+        if context:
+            logger.info(f"   Context: {context[:100]}...")
+
+        # Prepare goal with context
+        goal_with_context = goal
+        if context:
+            goal_with_context = f"{context}\n\nGoal: {goal}"
 
         # Prepare prompt
-        prompt = self.DECOMPOSITION_PROMPT.format(goal=goal)
+        prompt = self.DECOMPOSITION_PROMPT.format(goal=goal_with_context)
 
         # Call LLM using Claude Code SDK
         try:

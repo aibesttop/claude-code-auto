@@ -66,6 +66,9 @@ class IntegratedOutput:
     # 生成的报告文件
     reports: Dict[OutputFormat, Path] = field(default_factory=dict)
 
+    # 干预历史（Leader模式）
+    intervention_history: List[Dict[str, Any]] = field(default_factory=list)
+
 
 class OutputIntegrator:
     """
@@ -102,7 +105,8 @@ class OutputIntegrator:
         session_id: str,
         goal: str,
         mission_results: Dict[str, Dict[str, Any]],
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        intervention_history: Optional[List[Dict[str, Any]]] = None
     ) -> IntegratedOutput:
         """
         集成所有任务输出
@@ -112,6 +116,7 @@ class OutputIntegrator:
             goal: 总目标
             mission_results: 任务结果字典 {mission_id: result}
             metadata: 额外元数据
+            intervention_history: 干预历史（Leader模式）
 
         Returns:
             IntegratedOutput对象
@@ -121,7 +126,8 @@ class OutputIntegrator:
         # 创建集成输出对象
         integrated = IntegratedOutput(
             session_id=session_id,
-            goal=goal
+            goal=goal,
+            intervention_history=intervention_history or []
         )
 
         # 收集所有任务输出
@@ -136,6 +142,8 @@ class OutputIntegrator:
         integrated.end_time = time.time()
 
         logger.info(f"✅ Integration complete: {len(integrated.mission_outputs)} missions")
+        if intervention_history:
+            logger.info(f"   Interventions recorded: {len(intervention_history)}")
 
         return integrated
 
@@ -310,36 +318,205 @@ class OutputIntegrator:
 
     def _generate_html_report(self, integrated: IntegratedOutput) -> Path:
         """生成HTML报告"""
-        # 简单的HTML包装Markdown内容
-        md_content = self._generate_markdown_report(integrated).read_text(encoding='utf-8')
+        from .report_generator import ReportGenerator, ReportTemplate
+
+        # 生成Markdown内容
+        generator = ReportGenerator()
+        md_content = generator.generate(integrated, ReportTemplate.COMPREHENSIVE)
+
+        # 转换Markdown为HTML（简单实现，保留格式）
+        html_body = self._markdown_to_html(md_content)
 
         html_content = f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>任务报告 - {integrated.session_id}</title>
+    <title>任务执行报告 - {integrated.session_id}</title>
     <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f7fa;
+            padding: 20px;
+        }}
+
+        .container {{
             max-width: 1200px;
             margin: 0 auto;
-            padding: 20px;
-            line-height: 1.6;
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }}
-        h1 {{ color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }}
-        h2 {{ color: #34495e; border-bottom: 2px solid #95a5a6; padding-bottom: 8px; margin-top: 30px; }}
-        h3 {{ color: #555; }}
-        .summary {{ background: #ecf0f1; padding: 15px; border-radius: 5px; margin: 20px 0; }}
-        .mission {{ border-left: 4px solid #3498db; padding-left: 15px; margin: 20px 0; }}
-        .success {{ border-left-color: #2ecc71; }}
-        .failed {{ border-left-color: #e74c3c; }}
-        code {{ background: #f8f9fa; padding: 2px 6px; border-radius: 3px; }}
-        pre {{ background: #2c3e50; color: #ecf0f1; padding: 15px; border-radius: 5px; overflow-x: auto; }}
+
+        h1 {{
+            color: #1a202c;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            padding-bottom: 15px;
+            border-bottom: 4px solid #3498db;
+        }}
+
+        h2 {{
+            color: #2d3748;
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e2e8f0;
+        }}
+
+        h3 {{
+            color: #4a5568;
+            font-size: 1.4em;
+            margin-top: 25px;
+            margin-bottom: 10px;
+        }}
+
+        h4 {{
+            color: #718096;
+            font-size: 1.1em;
+            margin-top: 15px;
+            margin-bottom: 8px;
+        }}
+
+        p {{
+            margin-bottom: 15px;
+        }}
+
+        ul, ol {{
+            margin-left: 25px;
+            margin-bottom: 15px;
+        }}
+
+        li {{
+            margin-bottom: 8px;
+        }}
+
+        code {{
+            background: #f7fafc;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "Monaco", "Menlo", "Courier New", monospace;
+            font-size: 0.9em;
+            color: #e53e3e;
+        }}
+
+        pre {{
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 15px 0;
+        }}
+
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }}
+
+        th {{
+            background: #4299e1;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }}
+
+        td {{
+            padding: 10px 12px;
+            border-bottom: 1px solid #e2e8f0;
+        }}
+
+        tr:hover {{
+            background: #f7fafc;
+        }}
+
+        .badge {{
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }}
+
+        .badge-success {{
+            background: #c6f6d5;
+            color: #22543d;
+        }}
+
+        .badge-warning {{
+            background: #feebc8;
+            color: #7c2d12;
+        }}
+
+        .badge-error {{
+            background: #fed7d7;
+            color: #742a2a;
+        }}
+
+        .badge-info {{
+            background: #bee3f8;
+            color: #2c5282;
+        }}
+
+        .progress-bar {{
+            display: inline-block;
+            font-family: monospace;
+            background: #e2e8f0;
+            padding: 2px;
+            border-radius: 3px;
+        }}
+
+        .metric-card {{
+            background: #edf2f7;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            border-left: 4px solid #4299e1;
+        }}
+
+        .footer {{
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #e2e8f0;
+            color: #718096;
+            text-align: center;
+            font-size: 0.9em;
+        }}
+
+        hr {{
+            border: none;
+            border-top: 1px solid #e2e8f0;
+            margin: 30px 0;
+        }}
+
+        @media print {{
+            body {{
+                background: white;
+                padding: 0;
+            }}
+            .container {{
+                box-shadow: none;
+                padding: 20px;
+            }}
+        }}
     </style>
 </head>
 <body>
-    <pre>{md_content}</pre>
+    <div class="container">
+        {html_body}
+    </div>
 </body>
 </html>
 """
@@ -348,6 +525,134 @@ class OutputIntegrator:
         report_path.write_text(html_content, encoding='utf-8')
 
         return report_path
+
+    def _markdown_to_html(self, md_content: str) -> str:
+        """
+        简单的Markdown到HTML转换
+
+        基础实现，处理常见的Markdown元素
+        """
+        import re
+
+        html_lines = []
+        lines = md_content.split('\n')
+        in_code_block = False
+        in_table = False
+
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+
+            # 代码块
+            if line.strip().startswith('```'):
+                if in_code_block:
+                    html_lines.append('</pre>')
+                    in_code_block = False
+                else:
+                    html_lines.append('<pre>')
+                    in_code_block = True
+                i += 1
+                continue
+
+            if in_code_block:
+                html_lines.append(line)
+                i += 1
+                continue
+
+            # 标题
+            if line.startswith('# '):
+                html_lines.append(f'<h1>{line[2:]}</h1>')
+            elif line.startswith('## '):
+                html_lines.append(f'<h2>{line[3:]}</h2>')
+            elif line.startswith('### '):
+                html_lines.append(f'<h3>{line[4:]}</h3>')
+            elif line.startswith('#### '):
+                html_lines.append(f'<h4>{line[5:]}</h4>')
+
+            # 表格
+            elif line.strip().startswith('|'):
+                if not in_table:
+                    html_lines.append('<table>')
+                    in_table = True
+
+                cells = [c.strip() for c in line.split('|')[1:-1]]
+
+                # 检查是否为分隔行
+                if all(set(c) <= {'-', ' '} for c in cells):
+                    i += 1
+                    continue
+
+                # 判断是否为表头（查看下一行是否为分隔行）
+                is_header = False
+                if i + 1 < len(lines):
+                    next_line = lines[i + 1]
+                    if next_line.strip().startswith('|'):
+                        next_cells = [c.strip() for c in next_line.split('|')[1:-1]]
+                        if all(set(c) <= {{'-', ' '}} for c in next_cells):
+                            is_header = True
+
+                if is_header:
+                    html_lines.append('<tr>')
+                    for cell in cells:
+                        html_lines.append(f'<th>{self._format_inline(cell)}</th>')
+                    html_lines.append('</tr>')
+                else:
+                    html_lines.append('<tr>')
+                    for cell in cells:
+                        html_lines.append(f'<td>{self._format_inline(cell)}</td>')
+                    html_lines.append('</tr>')
+
+            elif in_table and not line.strip().startswith('|'):
+                html_lines.append('</table>')
+                in_table = False
+
+            # 水平线
+            elif line.strip() in ['---', '***', '___']:
+                html_lines.append('<hr>')
+
+            # 无序列表
+            elif line.strip().startswith('- '):
+                if i == 0 or not lines[i-1].strip().startswith('- '):
+                    html_lines.append('<ul>')
+                html_lines.append(f'<li>{self._format_inline(line.strip()[2:])}</li>')
+                if i == len(lines) - 1 or not lines[i+1].strip().startswith('- '):
+                    html_lines.append('</ul>')
+
+            # 空行
+            elif not line.strip():
+                if html_lines and html_lines[-1] not in ['<ul>', '<ol>', '</table>']:
+                    html_lines.append('<br>')
+
+            # 普通段落
+            else:
+                html_lines.append(f'<p>{self._format_inline(line)}</p>')
+
+            i += 1
+
+        if in_table:
+            html_lines.append('</table>')
+        if in_code_block:
+            html_lines.append('</pre>')
+
+        return '\n'.join(html_lines)
+
+    def _format_inline(self, text: str) -> str:
+        """格式化行内元素"""
+        import re
+
+        # 加粗 **text**
+        text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+
+        # 斜体 *text*
+        text = re.sub(r'\*(.+?)\*', r'<em>\1</em>', text)
+
+        # 行内代码 `code`
+        text = re.sub(r'`(.+?)`', r'<code>\1</code>', text)
+
+        # 链接 [text](url)
+        text = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2">\1</a>', text)
+
+        return text
 
     def _generate_text_report(self, integrated: IntegratedOutput) -> Path:
         """生成纯文本报告"""
