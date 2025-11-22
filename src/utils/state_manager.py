@@ -21,6 +21,66 @@ class WorkflowStatus(str, Enum):
     EMERGENCY_STOP = "emergency_stop"  # 紧急停止
 
 
+class NodeStatus(str, Enum):
+    """节点状态枚举（角色/任务）"""
+    PENDING = "pending"          # 等待中
+    IN_PROGRESS = "in_progress"  # 进行中
+    COMPLETED = "completed"      # 已完成
+    FAILED = "failed"            # 失败
+    BLOCKED = "blocked"          # 阻塞（等待依赖）
+
+
+@dataclass
+class RoleState:
+    """角色状态（用于可视化）"""
+    name: str
+    status: NodeStatus
+    category: str  # e.g., "researcher", "writer", "developer"
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    iterations: int = 0
+    current_task: Optional[str] = None
+    outputs: List[str] = field(default_factory=list)
+    validation_errors: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        data = asdict(self)
+        data['status'] = self.status.value
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "RoleState":
+        if 'status' in data and isinstance(data['status'], str):
+            data['status'] = NodeStatus(data['status'])
+        return cls(**data)
+
+
+@dataclass
+class MissionState:
+    """任务状态（用于Leader模式可视化）"""
+    id: str
+    type: str
+    goal: str
+    status: NodeStatus
+    assigned_role: Optional[str] = None
+    dependencies: List[str] = field(default_factory=list)
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    result: Optional[Dict[str, Any]] = None
+    iteration_count: int = 0
+
+    def to_dict(self) -> dict:
+        data = asdict(self)
+        data['status'] = self.status.value
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "MissionState":
+        if 'status' in data and isinstance(data['status'], str):
+            data['status'] = NodeStatus(data['status'])
+        return cls(**data)
+
+
 @dataclass
 class IterationRecord:
     """单次迭代记录"""
@@ -71,6 +131,13 @@ class ExecutionState:
     # 统计信息
     successful_iterations: int = 0
     failed_iterations: int = 0
+
+    # 可视化数据 - 角色和任务
+    mode: str = "original"  # "original", "team", "leader"
+    roles: List[RoleState] = field(default_factory=list)
+    missions: List[MissionState] = field(default_factory=list)
+    current_role: Optional[str] = None
+    current_mission: Optional[str] = None
 
     def add_iteration(
         self,
@@ -143,11 +210,59 @@ class ExecutionState:
             return 0.0
         return (self.successful_iterations / total) * 100
 
+    def add_or_update_role(self, role: RoleState):
+        """添加或更新角色状态"""
+        for i, existing_role in enumerate(self.roles):
+            if existing_role.name == role.name:
+                self.roles[i] = role
+                self.last_update = datetime.now().isoformat()
+                return
+        self.roles.append(role)
+        self.last_update = datetime.now().isoformat()
+
+    def get_role(self, name: str) -> Optional[RoleState]:
+        """获取角色状态"""
+        for role in self.roles:
+            if role.name == name:
+                return role
+        return None
+
+    def add_or_update_mission(self, mission: MissionState):
+        """添加或更新任务状态"""
+        for i, existing_mission in enumerate(self.missions):
+            if existing_mission.id == mission.id:
+                self.missions[i] = mission
+                self.last_update = datetime.now().isoformat()
+                return
+        self.missions.append(mission)
+        self.last_update = datetime.now().isoformat()
+
+    def get_mission(self, mission_id: str) -> Optional[MissionState]:
+        """获取任务状态"""
+        for mission in self.missions:
+            if mission.id == mission_id:
+                return mission
+        return None
+
+    def set_current_role(self, role_name: str):
+        """设置当前执行的角色"""
+        self.current_role = role_name
+        self.last_update = datetime.now().isoformat()
+
+    def set_current_mission(self, mission_id: str):
+        """设置当前执行的任务"""
+        self.current_mission = mission_id
+        self.last_update = datetime.now().isoformat()
+
     def to_dict(self) -> dict:
         """转换为字典"""
         data = asdict(self)
         # 转换 WorkflowStatus 枚举为字符串
         data['status'] = self.status.value
+        # 转换 roles
+        data['roles'] = [role.to_dict() for role in self.roles]
+        # 转换 missions
+        data['missions'] = [mission.to_dict() for mission in self.missions]
         return data
 
     def save(self, file_path: Path):
@@ -180,6 +295,20 @@ class ExecutionState:
             # 转换 status
             if 'status' in data:
                 data['status'] = WorkflowStatus(data['status'])
+
+            # 转换 roles
+            if 'roles' in data:
+                data['roles'] = [
+                    RoleState.from_dict(role)
+                    for role in data['roles']
+                ]
+
+            # 转换 missions
+            if 'missions' in data:
+                data['missions'] = [
+                    MissionState.from_dict(mission)
+                    for mission in data['missions']
+                ]
 
             return cls(**data)
         except Exception as e:

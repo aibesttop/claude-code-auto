@@ -315,6 +315,207 @@ async def get_statistics():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/roles")
+async def get_roles():
+    """获取所有角色状态（用于可视化）"""
+    try:
+        config = get_config()
+        state_file = config.get_state_file_path()
+
+        if not state_file.exists():
+            return {
+                "exists": False,
+                "roles": [],
+                "message": "工作流尚未启动"
+            }
+
+        state_manager = StateManager(state_file)
+        state = state_manager.get_state()
+
+        return {
+            "exists": True,
+            "mode": state.mode,
+            "current_role": state.current_role,
+            "roles": [role.to_dict() for role in state.roles]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/missions")
+async def get_missions():
+    """获取所有任务状态（用于可视化）"""
+    try:
+        config = get_config()
+        state_file = config.get_state_file_path()
+
+        if not state_file.exists():
+            return {
+                "exists": False,
+                "missions": [],
+                "message": "工作流尚未启动"
+            }
+
+        state_manager = StateManager(state_file)
+        state = state_manager.get_state()
+
+        return {
+            "exists": True,
+            "mode": state.mode,
+            "current_mission": state.current_mission,
+            "missions": [mission.to_dict() for mission in state.missions],
+            "goal": state.goal
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/graph")
+async def get_graph_data():
+    """获取图数据（nodes和edges）用于React Flow可视化"""
+    try:
+        config = get_config()
+        state_file = config.get_state_file_path()
+
+        if not state_file.exists():
+            return {
+                "exists": False,
+                "nodes": [],
+                "edges": [],
+                "message": "工作流尚未启动"
+            }
+
+        state_manager = StateManager(state_file)
+        state = state_manager.get_state()
+
+        nodes = []
+        edges = []
+
+        # 根据模式构建不同的图结构
+        if state.mode == "leader":
+            # Leader模式：显示任务层级和角色
+            # 1. 添加目标节点
+            nodes.append({
+                "id": "goal",
+                "type": "goal",
+                "data": {
+                    "label": state.goal[:50] + "..." if len(state.goal) > 50 else state.goal,
+                    "status": state.status.value
+                },
+                "position": {"x": 400, "y": 50}
+            })
+
+            # 2. 添加任务节点
+            y_offset = 200
+            for i, mission in enumerate(state.missions):
+                mission_node = {
+                    "id": mission.id,
+                    "type": "mission",
+                    "data": {
+                        "label": f"{mission.type}\n{mission.goal[:30]}...",
+                        "status": mission.status.value,
+                        "assigned_role": mission.assigned_role,
+                        "iterations": mission.iteration_count
+                    },
+                    "position": {"x": 150 + i * 250, "y": y_offset}
+                }
+                nodes.append(mission_node)
+
+                # 连接到目标
+                edges.append({
+                    "id": f"goal-{mission.id}",
+                    "source": "goal",
+                    "target": mission.id,
+                    "animated": mission.status.value == "in_progress"
+                })
+
+                # 处理依赖
+                for dep_id in mission.dependencies:
+                    edges.append({
+                        "id": f"{dep_id}-{mission.id}",
+                        "source": dep_id,
+                        "target": mission.id,
+                        "type": "smoothstep"
+                    })
+
+            # 3. 添加角色节点
+            y_offset = 400
+            for i, role in enumerate(state.roles):
+                role_node = {
+                    "id": f"role-{role.name}",
+                    "type": "role",
+                    "data": {
+                        "label": role.name,
+                        "status": role.status.value,
+                        "category": role.category,
+                        "iterations": role.iterations
+                    },
+                    "position": {"x": 150 + i * 200, "y": y_offset}
+                }
+                nodes.append(role_node)
+
+                # 连接角色到任务
+                for mission in state.missions:
+                    if mission.assigned_role == role.name:
+                        edges.append({
+                            "id": f"{mission.id}-role-{role.name}",
+                            "source": mission.id,
+                            "target": f"role-{role.name}",
+                            "label": "assigned",
+                            "animated": role.status.value == "in_progress"
+                        })
+
+        elif state.mode == "team":
+            # Team模式：显示角色序列
+            # 1. 添加目标节点
+            nodes.append({
+                "id": "goal",
+                "type": "goal",
+                "data": {
+                    "label": state.goal[:50] + "..." if len(state.goal) > 50 else state.goal,
+                    "status": state.status.value
+                },
+                "position": {"x": 50, "y": 50}
+            })
+
+            # 2. 添加角色节点（线性流程）
+            prev_id = "goal"
+            for i, role in enumerate(state.roles):
+                role_node = {
+                    "id": f"role-{role.name}",
+                    "type": "role",
+                    "data": {
+                        "label": role.name,
+                        "status": role.status.value,
+                        "category": role.category,
+                        "iterations": role.iterations,
+                        "outputs": len(role.outputs)
+                    },
+                    "position": {"x": 50 + i * 200, "y": 200}
+                }
+                nodes.append(role_node)
+
+                # 连接到前一个节点
+                edges.append({
+                    "id": f"{prev_id}-role-{role.name}",
+                    "source": prev_id,
+                    "target": f"role-{role.name}",
+                    "animated": role.status.value == "in_progress"
+                })
+                prev_id = f"role-{role.name}"
+
+        return {
+            "exists": True,
+            "mode": state.mode,
+            "nodes": nodes,
+            "edges": edges,
+            "session_id": state.session_id,
+            "goal": state.goal
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ============ WebSocket 端点 ============
 
 @app.websocket("/ws")
@@ -400,6 +601,7 @@ async def broadcast_status_updates():
                 state_manager = StateManager(state_file)
                 state = state_manager.get_state()
 
+                # 广播基础状态
                 await manager.broadcast({
                     "type": "status_update",
                     "timestamp": datetime.now().isoformat(),
@@ -407,9 +609,34 @@ async def broadcast_status_updates():
                         "current_iteration": state.current_iteration,
                         "status": state.status.value,
                         "progress": state.get_progress_percentage(),
-                        "last_update": state.last_update
+                        "last_update": state.last_update,
+                        "mode": state.mode,
+                        "current_role": state.current_role,
+                        "current_mission": state.current_mission
                     }
                 })
+
+                # 广播角色更新（如果有）
+                if state.roles:
+                    await manager.broadcast({
+                        "type": "roles_update",
+                        "timestamp": datetime.now().isoformat(),
+                        "data": {
+                            "roles": [role.to_dict() for role in state.roles],
+                            "current_role": state.current_role
+                        }
+                    })
+
+                # 广播任务更新（如果有）
+                if state.missions:
+                    await manager.broadcast({
+                        "type": "missions_update",
+                        "timestamp": datetime.now().isoformat(),
+                        "data": {
+                            "missions": [mission.to_dict() for mission in state.missions],
+                            "current_mission": state.current_mission
+                        }
+                    })
         except asyncio.CancelledError:
             break
         except Exception as e:

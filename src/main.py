@@ -127,10 +127,10 @@ async def run_leader_mode(config, work_dir, logger, event_store, cost_tracker, s
         return False
 
 
-async def run_team_mode(config, executor, work_dir, logger, event_store, session_id):
+async def run_team_mode(config, executor, work_dir, logger, event_store, session_id, state_manager=None):
     """
     Execute in team mode: assemble and orchestrate a team of roles.
-    
+
     Args:
         config: Configuration object
         executor: ExecutorAgent instance (reused for role execution)
@@ -138,13 +138,14 @@ async def run_team_mode(config, executor, work_dir, logger, event_store, session
         logger: Logger instance
         event_store: EventStore instance
         session_id: Session ID
-        
+        state_manager: StateManager instance for visualization updates
+
     Returns:
         bool: True if team mission succeeded, False otherwise
     """
     logger.info("🎭 Team Mode Activated")
     logger.info(f"Initial Prompt: {config.task.initial_prompt[:200]}...")
-    
+
     # Log team mode start event
     event_store.create_event(
         EventType.SESSION_START,
@@ -153,20 +154,26 @@ async def run_team_mode(config, executor, work_dir, logger, event_store, session
         goal=config.task.goal,
         initial_prompt=config.task.initial_prompt[:500]
     )
-    
+
+    # Update state mode to "team"
+    if state_manager:
+        state = state_manager.get_state()
+        state.mode = "team"
+        state_manager.save()
+
     try:
         # 1. Load role registry
         role_registry = RoleRegistry(roles_dir="roles")
         logger.info(f"📚 Loaded {len(role_registry.roles)} roles: {role_registry.list_roles()}")
-        
+
         if len(role_registry.roles) == 0:
             logger.error("❌ No roles found in roles/ directory. Cannot proceed with team mode.")
             return False
-        
+
         # 2. Assemble team
         logger.info("🔍 Assembling team based on initial_prompt...")
         assembler = TeamAssembler(role_registry)
-        
+
         roles = await assembler.assemble_team(
             initial_prompt=config.task.initial_prompt,
             goal=config.task.goal,
@@ -175,13 +182,13 @@ async def run_team_mode(config, executor, work_dir, logger, event_store, session
             timeout=config.claude.timeout_seconds,
             permission_mode=config.claude.permission_mode
         )
-        
+
         if not roles:
             logger.error("❌ Failed to assemble team. Falling back to original mode.")
             return False
-        
+
         logger.info(f"✅ Team assembled: {[r.name for r in roles]}")
-        
+
         # Log team assembly event
         event_store.create_event(
             EventType.PLANNER_COMPLETE,
@@ -189,26 +196,40 @@ async def run_team_mode(config, executor, work_dir, logger, event_store, session
             team_roles=[r.name for r in roles],
             team_size=len(roles)
         )
-        
+
+        # Initialize role states in StateManager
+        if state_manager:
+            from src.utils.state_manager import RoleState, NodeStatus
+            state = state_manager.get_state()
+            for role in roles:
+                role_state = RoleState(
+                    name=role.name,
+                    status=NodeStatus.PENDING,
+                    category=role.category if hasattr(role, 'category') else "general"
+                )
+                state.add_or_update_role(role_state)
+            state_manager.save()
+
         # 3. Execute team workflow
         logger.info("🚀 Starting team orchestration...")
         orchestrator = TeamOrchestrator(
             roles=roles,
             executor_agent=executor,
-            work_dir=str(work_dir)
+            work_dir=str(work_dir),
+            state_manager=state_manager  # Pass state manager
         )
-        
+
         result = await orchestrator.execute(config.task.goal)
-        
+
         # 4. Report results
         if result['success']:
             logger.info("✅ Team mission accomplished!")
             logger.info(f"📊 Completed {result['completed_roles']}/{len(roles)} roles")
-            
+
             # Log success details
             for role_name, role_result in result['results'].items():
                 logger.info(f"   {role_name}: {role_result['iterations']} iterations")
-            
+
             event_store.create_event(
                 EventType.SESSION_END,
                 session_id=session_id,
@@ -219,7 +240,7 @@ async def run_team_mode(config, executor, work_dir, logger, event_store, session
             return True
         else:
             logger.error(f"❌ Team failed at role {result['completed_roles']}/{len(roles)}")
-            
+
             event_store.create_event(
                 EventType.SESSION_END,
                 session_id=session_id,
@@ -228,7 +249,7 @@ async def run_team_mode(config, executor, work_dir, logger, event_store, session
                 total_roles=len(roles)
             )
             return False
-            
+
     except Exception as e:
         logger.error(f"❌ Team mode execution failed: {e}")
         event_store.create_event(
@@ -413,7 +434,8 @@ async def main(config_path: str = "config.yaml"):
             work_dir=work_dir,
             logger=logger,
             event_store=event_store,
-            session_id=session_id
+            session_id=session_id,
+            state_manager=state_manager  # Pass state manager for visualization
         )
         
         if team_success:

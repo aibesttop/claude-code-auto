@@ -16,39 +16,42 @@ logger = logging.getLogger(__name__)
 class TeamOrchestrator:
     """
     Orchestrates linear execution of a team of roles.
-    
+
     Each role completes its mission before the next one starts.
     Context is passed from one role to the next.
     """
-    
+
     def __init__(
         self,
         roles: List[Role],
         executor_agent: ExecutorAgent,
-        work_dir: str
+        work_dir: str,
+        state_manager=None
     ):
         """
         Initialize the team orchestrator.
-        
+
         Args:
             roles: List of roles in execution order
             executor_agent: Existing ExecutorAgent instance
             work_dir: Working directory
+            state_manager: Optional StateManager for visualization updates
         """
         self.roles = roles
         self.executor = executor_agent
         self.work_dir = work_dir
-        
+        self.state_manager = state_manager
+
         # Context storage (outputs from completed roles)
         self.context: Dict[str, Any] = {}
     
     async def execute(self, goal: str) -> Dict[str, Any]:
         """
         Execute team workflow linearly.
-        
+
         Args:
             goal: Overall goal to achieve
-            
+
         Returns:
             {
                 "success": bool,
@@ -59,27 +62,54 @@ class TeamOrchestrator:
         logger.info(f"🎯 Team Goal: {goal}")
         logger.info(f"👥 Team Size: {len(self.roles)}")
         logger.info(f"📋 Role Sequence: {[r.name for r in self.roles]}")
-        
+
         results = {}
-        
+
         for i, role in enumerate(self.roles):
             logger.info(f"\n{'='*60}")
             logger.info(f"Role {i+1}/{len(self.roles)}: {role.name}")
             logger.info(f"{'='*60}")
-            
+
+            # Update role status to IN_PROGRESS
+            if self.state_manager:
+                from src.utils.state_manager import NodeStatus
+                from datetime import datetime
+                state = self.state_manager.get_state()
+                role_state = state.get_role(role.name)
+                if role_state:
+                    role_state.status = NodeStatus.IN_PROGRESS
+                    role_state.start_time = datetime.now().isoformat()
+                    state.set_current_role(role.name)
+                    self.state_manager.save()
+
             # Create role executor
             role_executor = RoleExecutor(
                 role=role,
                 executor_agent=self.executor,
                 work_dir=self.work_dir
             )
-            
+
             # Execute role mission (small loop)
             result = await role_executor.execute(context=self.context)
-            
+
             # Save result
             results[role.name] = result
-            
+
+            # Update role status based on result
+            if self.state_manager:
+                from src.utils.state_manager import NodeStatus
+                from datetime import datetime
+                state = self.state_manager.get_state()
+                role_state = state.get_role(role.name)
+                if role_state:
+                    role_state.status = NodeStatus.COMPLETED if result['success'] else NodeStatus.FAILED
+                    role_state.end_time = datetime.now().isoformat()
+                    role_state.iterations = result.get('iterations', 0)
+                    role_state.outputs = result.get('outputs', [])
+                    if not result['success'] and 'validation_errors' in result:
+                        role_state.validation_errors = result['validation_errors']
+                    self.state_manager.save()
+
             # Check success
             if not result['success']:
                 logger.error(f"❌ {role.name} failed. Stopping team execution.")
@@ -88,14 +118,20 @@ class TeamOrchestrator:
                     "completed_roles": i,
                     "results": results
                 }
-            
+
             # Add to context for next role
             self.context[role.name] = result
-            
+
             logger.info(f"✅ {role.name} completed in {result['iterations']} iterations")
-        
+
+        # Clear current role
+        if self.state_manager:
+            state = self.state_manager.get_state()
+            state.current_role = None
+            self.state_manager.save()
+
         logger.info(f"\n🎉 All {len(self.roles)} roles completed successfully!")
-        
+
         return {
             "success": True,
             "completed_roles": len(self.roles),
