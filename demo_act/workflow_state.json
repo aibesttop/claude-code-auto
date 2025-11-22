@@ -1,0 +1,18 @@
+{
+  "session_id": "a255d92f-4d9b-42ed-9c45-d558f19d6041",
+  "goal": "挖掘出2个在矿井工作这个利基市场的app机会，最终输出分别输出两份详细的app需求文档，格式为.md文件。",
+  "work_dir": "demo_act",
+  "status": "running",
+  "current_iteration": 0,
+  "max_iterations": 50,
+  "start_time": "2025-11-22T05:31:18.284406",
+  "last_update": "2025-11-22T05:31:18.284406",
+  "total_duration_seconds": 1140.001063,
+  "history": [],
+  "persona_history": [],
+  "current_persona": "default",
+  "error_count": 0,
+  "last_error": null,
+  "successful_iterations": 0,
+  "failed_iterations": 0
+}

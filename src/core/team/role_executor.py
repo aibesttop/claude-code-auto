@@ -133,12 +133,16 @@ class RoleExecutor:
 
 ## Output Standard{template_info}
 
+Working Directory: {self.work_dir}
+IMPORTANT: You must write all files to the directory '{self.work_dir}'.
+Example: write_file("{self.work_dir}/example.md", ...)
+
 Required files:
 {required_files_str}
 
 ## Instructions
 1. Complete all success criteria
-2. Generate all required files
+2. Generate all required files in '{self.work_dir}'
 3. Ensure outputs meet validation rules
 4. Use the tools available to you
 """
@@ -155,6 +159,7 @@ Required files:
 ## Instructions
 Fix the above issues and ensure all validation rules pass.
 Do NOT regenerate everything, just fix the specific issues.
+IMPORTANT: Write files to '{self.work_dir}'.
 """
     
     def _validate_outputs(self) -> Dict[str, Any]:
