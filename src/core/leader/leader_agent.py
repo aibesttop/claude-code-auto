@@ -16,6 +16,7 @@ from src.core.resources.resource_registry import ResourceRegistry
 from src.core.team.role_registry import Role, RoleRegistry
 from src.core.team.role_executor import RoleExecutor
 from src.core.team.dependency_resolver import DependencyResolver
+from src.core.team.team_assembler import TeamAssembler
 from src.core.agents.executor import ExecutorAgent
 from src.core.agents.sdk_client import run_claude_prompt
 from src.core.events import EventStore, CostTracker
@@ -104,6 +105,7 @@ class LeaderAgent:
         self.resource_registry = ResourceRegistry()
         self.role_registry = RoleRegistry()
         self.dependency_resolver = DependencyResolver()
+        self.team_assembler = TeamAssembler(self.role_registry)
 
         # Tracking
         self.event_store = EventStore()
@@ -161,11 +163,31 @@ class LeaderAgent:
                 "error": "Invalid mission dependencies"
             }
 
+        # Step 2: Assemble Team & Resolve Dependencies
+        logger.info(f"\n{'='*70}")
+        logger.info(f"👥 Step 2: Team Assembly & Dependency Resolution")
+        logger.info(f"{'='*70}")
+
+        # Assign roles to missions
+        role_map = await self.team_assembler.assign_roles(
+            missions=missions,
+            work_dir=str(self.work_dir),
+            model=self.model
+        )
+        
+        # Sort missions by dependency
+        sorted_missions = self.dependency_resolver.sort_missions(missions)
+        
+        logger.info(f"✅ Team assembled and sorted. Execution order:")
+        for i, m in enumerate(sorted_missions, 1):
+            role_name = role_map.get(m.id, "Market-Researcher")
+            logger.info(f"   {i}. [{role_name}] -> Mission: {m.id} ({m.type})")
+
         # Initialize context
         self.context = ExecutionContext(
             session_id=session_id,
             goal=goal,
-            missions=missions,
+            missions=sorted_missions,
             completed_missions={},
             active_roles=[],
             total_cost_usd=0.0,
@@ -173,12 +195,14 @@ class LeaderAgent:
             intervention_count=0
         )
 
-        # Step 2: Execute missions sequentially
-        for i, mission in enumerate(missions, 1):
+        # Step 3: Execute missions sequentially
+        for i, mission in enumerate(sorted_missions, 1):
             logger.info(f"\n{'='*70}")
-            logger.info(f"🚀 Step 2.{i}: Execute Mission '{mission.id}'")
+            logger.info(f"🚀 Step 3.{i}: Execute Mission '{mission.id}'")
             logger.info(f"{'='*70}")
-            logger.info(f"Type: {mission.type}")
+            
+            role_name = role_map.get(mission.id, "Market-Researcher")
+            logger.info(f"Role: {role_name}")
             logger.info(f"Goal: {mission.goal}")
 
             # Check budget before executing
@@ -192,7 +216,7 @@ class LeaderAgent:
                     }
 
             # Execute mission
-            result = await self._execute_mission(mission)
+            result = await self._execute_mission(mission, role_name)
 
             if result['success']:
                 self.context.completed_missions[mission.id] = result
@@ -230,12 +254,13 @@ class LeaderAgent:
             "metadata": self._get_metadata()
         }
 
-    async def _execute_mission(self, mission: SubMission) -> Dict[str, Any]:
+    async def _execute_mission(self, mission: SubMission, role_name: str) -> Dict[str, Any]:
         """
         Execute a single mission with retry and intervention logic.
 
         Args:
             mission: SubMission to execute
+            role_name: Name of the role to execute this mission
 
         Returns:
             Result dictionary with success status
@@ -247,7 +272,15 @@ class LeaderAgent:
             logger.info(f"🔄 Iteration {iteration}/{self.max_mission_retries}")
 
             # 1. Select role for this mission
-            role = await self._select_role_for_mission(mission)
+            try:
+                role = self.role_registry.get_role(role_name)
+            except Exception:
+                logger.warning(f"Role '{role_name}' not found, using Market-Researcher as fallback")
+                role = self.role_registry.get_role("Market-Researcher")
+            
+            # Update role's mission
+            role.mission = mission
+            
             logger.info(f"   👤 Selected role: {role.name}")
 
             # 2. Create executor with role's configuration
@@ -337,30 +370,7 @@ class LeaderAgent:
             "error": f"Max retries exceeded"
         }
 
-    async def _select_role_for_mission(self, mission: SubMission) -> Role:
-        """
-        Select appropriate role for a mission type.
 
-        Maps mission type to role name.
-        """
-        # Simple mapping for v4.0
-        type_to_role = {
-            "market_research": "Market-Researcher",
-            "documentation": "AI-Native-Writer",
-            "code_generation": "AI-Native-Developer",
-            "architecture_design": "Architect",
-            "seo_strategy": "SEO-Specialist",
-            "creative_exploration": "Creative-Explorer"
-        }
-
-        role_name = type_to_role.get(mission.type, "Market-Researcher")
-
-        try:
-            role = self.role_registry.get_role(role_name)
-            return role
-        except Exception as e:
-            logger.warning(f"Role '{role_name}' not found, using Market-Researcher as fallback")
-            return self.role_registry.get_role("Market-Researcher")
 
     def _build_context_for_mission(self, mission: SubMission) -> Dict[str, Any]:
         """

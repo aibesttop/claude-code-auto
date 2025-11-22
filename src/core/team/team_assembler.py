@@ -4,7 +4,7 @@ Team Assembler
 Analyzes initial_prompt and goal to determine which roles are needed.
 """
 
-from typing import List
+from typing import List, Dict, Any
 from src.core.team.role_registry import RoleRegistry, Role
 from src.core.team.dependency_resolver import (
     DependencyResolver,
@@ -38,6 +38,7 @@ class TeamAssembler:
         self,
         initial_prompt: str,
         goal: str,
+        missions: List[Any] = None,  # Added missions parameter
         work_dir: str = ".",
         model: str = None,
         timeout: int = 60,
@@ -58,7 +59,7 @@ class TeamAssembler:
             List of Role objects in execution order
         """
         # Build analysis prompt
-        analysis_prompt = self._build_analysis_prompt(initial_prompt, goal)
+        analysis_prompt = self._build_analysis_prompt(initial_prompt, goal, missions)
         
         # Call LLM to analyze
         logger.info("Analyzing initial_prompt to determine required roles...")
@@ -152,18 +153,28 @@ class TeamAssembler:
             logger.error(f"❌ Unexpected error during dependency resolution: {e}")
             return []
     
-    def _build_analysis_prompt(self, initial_prompt: str, goal: str) -> str:
+    def _build_analysis_prompt(self, initial_prompt: str, goal: str, missions: List[Any] = None) -> str:
         """
         Build the prompt for LLM to analyze required roles.
         
         Args:
             initial_prompt: User's initial prompt
             goal: Overall goal
+            missions: List of decomposed missions (optional)
             
         Returns:
             Formatted prompt string
         """
         available_roles = self._format_available_roles()
+        
+        missions_text = ""
+        if missions:
+            missions_text = "\n## Decomposed Missions\n"
+            for i, m in enumerate(missions, 1):
+                # Handle both SubMission objects and dicts
+                m_goal = m.goal if hasattr(m, 'goal') else m.get('goal', 'Unknown')
+                m_type = m.type if hasattr(m, 'type') else m.get('type', 'general')
+                missions_text += f"{i}. [{m_type}] {m_goal}\n"
         
         return f"""
 Analyze the following task and determine which roles are needed to complete it.
@@ -173,7 +184,7 @@ Analyze the following task and determine which roles are needed to complete it.
 
 ## Goal
 {goal}
-
+{missions_text}
 ## Available Roles
 {available_roles}
 
@@ -207,3 +218,84 @@ CRITICAL: Output ONLY the JSON object. No explanatory text before or after.
             if role.dependencies:
                 lines.append(f"  Dependencies: {', '.join(role.dependencies)}")
         return "\n".join(lines)
+
+    async def assign_roles(
+        self,
+        missions: List[Any],
+        work_dir: str = ".",
+        model: str = None,
+        timeout: int = 60,
+        permission_mode: str = "bypassPermissions"
+    ) -> Dict[str, str]:
+        """
+        Assign the most suitable role to each mission.
+        
+        Args:
+            missions: List of SubMission objects
+            work_dir: Working directory
+            model: Model to use
+            
+        Returns:
+            Dictionary mapping mission_id to role_name
+        """
+        available_roles = self._format_available_roles()
+        
+        missions_text = ""
+        for m in missions:
+            # Handle both SubMission objects and dicts
+            m_id = m.id if hasattr(m, 'id') else m.get('id', 'unknown')
+            m_goal = m.goal if hasattr(m, 'goal') else m.get('goal', 'Unknown')
+            m_type = m.type if hasattr(m, 'type') else m.get('type', 'general')
+            missions_text += f"- ID: {m_id} | Type: {m_type} | Goal: {m_goal}\n"
+            
+        prompt = f"""
+Assign the best available role to each of the following missions.
+
+## Missions
+{missions_text}
+
+## Available Roles
+{available_roles}
+
+## Instructions
+1. For each mission, select the ONE most appropriate role.
+2. Consider the mission type and goal.
+3. Output ONLY a JSON object mapping mission IDs to Role Names.
+
+Example Output:
+{{
+    "mission_1": "Market-Researcher",
+    "mission_2": "AI-Native-Writer"
+}}
+"""
+        logger.info("🤖 Assigning roles to missions...")
+        
+        try:
+            response, _ = await run_claude_prompt(
+                prompt,
+                work_dir,
+                model=model,
+                timeout=timeout,
+                permission_mode=permission_mode
+            )
+            
+            data = extract_json(response)
+            if not data:
+                logger.error("Failed to parse role assignment response")
+                return {}
+                
+            # Validate roles exist
+            validated_assignment = {}
+            for m_id, role_name in data.items():
+                if self.registry.get_role(role_name):
+                    validated_assignment[m_id] = role_name
+                else:
+                    logger.warning(f"Assigned role '{{role_name}}' not found. Using default.")
+                    validated_assignment[m_id] = "Market-Researcher" # Fallback
+            
+            logger.info(f"✅ Role assignments: {{validated_assignment}}")
+            return validated_assignment
+            
+        except Exception as e:
+            logger.error(f"Failed to assign roles: {{e}}")
+            return {}

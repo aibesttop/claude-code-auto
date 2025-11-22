@@ -5,7 +5,7 @@ Implements topological sorting to ensure roles execute in correct dependency ord
 Uses Kahn's algorithm for cycle detection and ordering.
 """
 
-from typing import List, Dict, Set, Optional
+from typing import List, Dict, Set, Optional, Any
 from collections import defaultdict, deque
 from dataclasses import dataclass
 
@@ -282,3 +282,57 @@ class DependencyResolver:
         lines.append(f"Total Roles: {len(roles)} | Max Depth: {max(levels.values())}")
 
         return "\n".join(lines)
+
+    def sort_missions(self, missions: List[Any]) -> List[Any]:
+        """
+        Sort missions based on their dependencies using topological sort.
+        
+        Args:
+            missions: List of SubMission objects (must have id and dependencies attributes)
+            
+        Returns:
+            List of missions in execution order
+        """
+        if not missions:
+            return []
+            
+        # Build map
+        mission_map = {m.id: m for m in missions}
+        
+        # Build graph
+        graph = defaultdict(list)
+        in_degree = defaultdict(int)
+        
+        # Initialize in-degree
+        for m in missions:
+            if m.id not in in_degree:
+                in_degree[m.id] = 0
+                
+        # Populate graph
+        for m in missions:
+            for dep_id in m.dependencies:
+                if dep_id in mission_map:
+                    graph[dep_id].append(m.id)
+                    in_degree[m.id] += 1
+                else:
+                    logger.warning(f"Mission {m.id} depends on unknown mission {dep_id}")
+                    
+        # Kahn's algorithm
+        queue = deque([m_id for m_id, degree in in_degree.items() if degree == 0])
+        sorted_ids = []
+        
+        while queue:
+            current_id = queue.popleft()
+            sorted_ids.append(current_id)
+            
+            for dependent_id in graph[current_id]:
+                in_degree[dependent_id] -= 1
+                if in_degree[dependent_id] == 0:
+                    queue.append(dependent_id)
+                    
+        # Check for cycles
+        if len(sorted_ids) != len(missions):
+            logger.error("Circular dependency detected in missions! Falling back to original order.")
+            return missions
+            
+        return [mission_map[m_id] for m_id in sorted_ids]
