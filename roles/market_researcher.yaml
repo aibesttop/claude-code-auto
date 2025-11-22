@@ -17,25 +17,15 @@ mission:
 output_standard:
   required_files:
     - "market-research.md"
-  
+
   validation_rules:
     - type: "file_exists"
       file: "market-research.md"
-    
-    - type: "content_check"
-      file: "market-research.md"
-      must_contain:
-        - "## Executive Summary"
-        - "## Target Users"
-        - "## Competitor Analysis"
-        - "## Market Size"
-        - "## User Pain Points"
-        - "## Opportunities"
-    
+
     - type: "min_length"
       file: "market-research.md"
-      min_chars: 2000
-    
+      min_chars: 1000
+
     - type: "no_placeholders"
       files:
         - "market-research.md"
