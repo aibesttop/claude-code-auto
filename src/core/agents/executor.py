@@ -169,7 +169,7 @@ class ExecutorAgent:
                 try:
                     response_text, _ = await run_claude_prompt(
                         current_prompt,
-                        self.work_dir,
+                        str(work_dir_path),  # Use absolute path instead of self.work_dir
                         model=self.model,
                         permission_mode=self.permission_mode,
                         timeout=self.timeout_seconds,

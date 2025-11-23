@@ -46,18 +46,23 @@
 
 ### 1. **完全符合预期！** ✅
 
-这个事件日志完美展示了系统的**三层fallback机制**：
+这个事件日志展示了系统的**两层架构设计**和fallback机制：
 
 ```
-Leader Mode → Team Mode → Original Mode (单agent迭代)
+主要架构:
+1. Leader Mode (v4.0) - 动态编排，智能干预
+2. 非Leader Mode (Team/Original) - 传统执行
+
+Fallback流程 (本次执行):
+Leader Mode → Team Mode → Original Mode
 ```
 
 **代码逻辑**（src/main.py）:
-1. Line 365-377: 如果 `config.leader.enabled == true`，先尝试Leader mode
-2. Line 403: Leader失败，记录warning并fallback
-3. Line 407-418: 如果有 `initial_prompt`，尝试Team mode
+1. Line 365-377: 如果 `config.leader.enabled == true`，使用Leader mode (v4.0新架构)
+2. Line 403: Leader失败，记录warning并fallback到传统模式
+3. Line 407-418: 如果有 `initial_prompt`，使用Team mode (传统架构)
 4. Line 447: Team失败，再次fallback
-5. Line 451+: 执行Original mode（单agent ReAct循环）
+5. Line 451+: 使用Original mode（单agent ReAct循环）
 
 **事件日志验证**:
 - ✅ Leader mode尝试启动（06:13:38）
@@ -166,12 +171,20 @@ Leader Mode → Team Mode → Original Mode (单agent迭代)
 
 ### 1. Fallback机制工作正常 ✅
 
-三层fallback按预期工作：
+两层架构的fallback机制按预期工作：
 ```
-Leader (失败) → Team (失败) → Original (成功)
+Leader Mode (v4.0新架构，失败)
+  ↓ fallback
+Team Mode (传统架构，失败)
+  ↓ fallback
+Original Mode (单agent，成功)
 ```
 
 这证明了系统的**健壮性设计**是正确的。
+
+**架构说明**:
+- **Leader Mode (v4.0)**: 新架构，使用MissionDecomposer、TeamAssembler、干预策略等高级特性
+- **非Leader Mode**: 传统架构，包括Team Mode（多角色协作）和Original Mode（单agent）
 
 ### 2. max_iterations Bug的影响范围 ⚠️
 
