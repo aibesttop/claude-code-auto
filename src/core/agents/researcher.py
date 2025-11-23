@@ -4,6 +4,7 @@ Researcher Agent: wraps web search + summarization.
 """
 from typing import Optional, Dict, List
 from datetime import datetime, timedelta
+from pathlib import Path
 import hashlib
 import json
 
@@ -107,7 +108,10 @@ class ResearcherAgent:
         max_retries: int = 3,
         retry_delay: float = 2.0,
     ):
-        self.work_dir = work_dir
+        # Use absolute path to avoid CWD-related issues
+        self.work_dir = str(Path(work_dir).resolve())
+        logger.info(f"📁 ResearcherAgent work_dir (absolute): {self.work_dir}")
+
         self.provider = provider
         self.enabled = enabled
         self.model = model
