@@ -272,7 +272,11 @@ async def main(config_path: str = "config.yaml"):
     logger.info(f"Goal: {config.task.goal}")
 
     # Ensure work directory exists
-    work_dir = Path(config.directories.work_dir)
+    # CRITICAL: Use absolute path based on project root to avoid nesting when CWD changes
+    project_root = Path(__file__).parent.parent.resolve()
+    work_dir = (project_root / config.directories.work_dir).resolve()
+    logger.info(f"📁 Project root: {project_root}")
+    logger.info(f"📁 Work directory (absolute): {work_dir}")
     work_dir.mkdir(parents=True, exist_ok=True)
 
     # Initialize event store and cost tracker
