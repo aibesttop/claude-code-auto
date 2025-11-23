@@ -138,9 +138,11 @@ class ExecutorAgent:
 
         # CRITICAL: Change process working directory to match work_dir
         # This ensures all file operations using relative paths are relative to work_dir
-        original_cwd = os.getcwd()
+        # IMPORTANT: Set original_cwd to work_dir_path to ensure we stay in work_dir
+        # after finally block, so validation can find the generated files
+        original_cwd = work_dir_path  # Keep CWD at work_dir for validation
         os.chdir(work_dir_path)
-        logger.info(f"📂 Changed CWD from {original_cwd} to {work_dir_path}")
+        logger.info(f"📂 Set CWD to work_dir: {work_dir_path}")
 
         try:
             tool_desc = self._get_tool_descriptions()
@@ -222,9 +224,10 @@ class ExecutorAgent:
             return "Error: Max steps reached without completion."
 
         finally:
-            # Restore original working directory
+            # Ensure CWD stays at work_dir for validation
+            # (original_cwd is set to work_dir_path to keep validation working)
             os.chdir(original_cwd)
-            logger.info(f"📂 Restored CWD to {original_cwd}")
+            logger.info(f"📂 Ensured CWD at work_dir: {original_cwd}")
 
     def export_react_trace(
         self,
