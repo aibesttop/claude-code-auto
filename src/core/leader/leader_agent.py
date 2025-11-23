@@ -105,8 +105,21 @@ class LeaderAgent:
 
         # Components
         self.mission_decomposer = MissionDecomposer(model=model, work_dir=str(self.work_dir))
-        self.resource_registry = ResourceRegistry()
-        self.role_registry = RoleRegistry()
+
+        # Calculate project root for resources and roles directories (avoid CWD dependency)
+        # Use this file's location to find project root
+        project_root = Path(__file__).parent.parent.parent.resolve()
+
+        resources_dir = project_root / "resources"
+        self.resource_registry = ResourceRegistry(config_dir=str(resources_dir))
+
+        roles_dir = project_root / "roles"
+        self.role_registry = RoleRegistry(roles_dir=str(roles_dir))
+
+        logger.info(f"📁 Project root: {project_root}")
+        logger.info(f"📁 Resources directory: {resources_dir}")
+        logger.info(f"📁 Roles directory: {roles_dir}")
+
         self.dependency_resolver = DependencyResolver()
         self.team_assembler = TeamAssembler(self.role_registry)
         self.helper_governor = HelperGovernor()

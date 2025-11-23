@@ -154,10 +154,14 @@ async def run_team_mode(config, executor, work_dir, logger, event_store, session
         goal=config.task.goal,
         initial_prompt=config.task.initial_prompt[:500]
     )
-    
+
     try:
+        # Calculate project root for roles directory
+        project_root = Path(__file__).parent.parent.resolve()
+        roles_dir = project_root / "roles"
+
         # 1. Load role registry
-        role_registry = RoleRegistry(roles_dir="roles")
+        role_registry = RoleRegistry(roles_dir=str(roles_dir))
         logger.info(f"📚 Loaded {len(role_registry.roles)} roles: {role_registry.list_roles()}")
         
         if len(role_registry.roles) == 0:
