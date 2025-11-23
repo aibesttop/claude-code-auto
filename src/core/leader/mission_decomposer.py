@@ -6,6 +6,7 @@ with clear success criteria.
 """
 from typing import List, Dict, Any
 from dataclasses import dataclass, field
+from pathlib import Path
 import json
 
 from src.core.agents.sdk_client import run_claude_prompt
@@ -100,7 +101,9 @@ Now decompose this SPECIFIC goal into sub-missions. Remember: STAY ON THE USER'S
 
     def __init__(self, model: str = "sonnet", work_dir: str = "."):
         self.model = model
-        self.work_dir = work_dir
+        # Use absolute path to avoid CWD-related issues
+        self.work_dir = str(Path(work_dir).resolve())
+        logger.info(f"📁 MissionDecomposer work_dir (absolute): {self.work_dir}")
 
     async def decompose(
         self,

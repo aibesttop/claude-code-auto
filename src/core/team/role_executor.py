@@ -54,8 +54,10 @@ class RoleExecutor:
         """
         self.role = role
         self.executor = executor_agent
-        self.work_dir = Path(work_dir)
+        # Use absolute path to avoid CWD-related issues
+        self.work_dir = Path(work_dir).resolve()
         self.session_id = session_id or "unknown"
+        logger.info(f"📁 RoleExecutor work_dir (absolute): {self.work_dir}")
         self.use_planner = use_planner
         self.skill_prompt = skill_prompt
         self.allowed_tools = allowed_tools
@@ -68,7 +70,7 @@ class RoleExecutor:
         self.planner = None
         if use_planner:
             self.planner = PlannerAgent(
-                work_dir=work_dir,
+                work_dir=str(self.work_dir),  # Use resolved absolute path
                 goal=role.mission.goal,
                 model=model,
                 timeout_seconds=timeout_seconds,

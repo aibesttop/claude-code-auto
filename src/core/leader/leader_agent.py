@@ -93,8 +93,10 @@ class LeaderAgent:
             budget_limit_usd: Budget limit in USD
             session_id: Session ID for tracking
         """
-        self.work_dir = Path(work_dir)
+        # Use absolute path to avoid CWD-related issues
+        self.work_dir = Path(work_dir).resolve()
         self.work_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"📁 LeaderAgent work_dir (absolute): {self.work_dir}")
 
         self.model = model
         self.max_mission_retries = max_mission_retries
