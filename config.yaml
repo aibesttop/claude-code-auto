@@ -92,7 +92,7 @@ cost_control:
 
 # Leader Agent (v4.0) - Dynamic orchestration
 leader:
-  enabled: false  # Set to true to enable Leader mode
+  enabled: true  # Set to true to enable Leader mode
   max_mission_retries: 3
   quality_threshold: 70.0
   enable_intervention: true

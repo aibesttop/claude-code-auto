@@ -470,6 +470,40 @@ The working directory is already set to: {self.work_dir}
                             logger.warning(f"Found '{required}' in {rule.file} with whitespace normalization")
                             continue
 
+                        # Method 4: Try semantic/synonym matching (multilingual support)
+                        # Extract header text without markdown syntax
+                        required_text = required.replace('#', '').strip().lower()
+
+                        # Define synonym groups for common headers
+                        synonym_groups = {
+                            'target users': ['user segments', 'target audience', 'users', '目标用户', '用户画像'],
+                            'competitor analysis': ['competitive analysis', 'competition', 'competitors', '竞品分析', '竞争分析'],
+                            'market size': ['market analysis', 'market overview', '市场规模', '市场分析'],
+                            'user pain points': ['pain points', 'challenges', 'problems', '用户痛点', '痛点分析'],
+                            'opportunities': ['market opportunities', 'business opportunities', '市场机会', '商业机会'],
+                            'executive summary': ['summary', 'overview', '执行摘要', '概述'],
+                        }
+
+                        # Check if any synonym exists in content
+                        found_synonym = False
+                        if required_text in synonym_groups:
+                            for synonym in synonym_groups[required_text]:
+                                # Try case-insensitive search with ## prefix (flexible markdown header)
+                                patterns_to_try = [
+                                    r'#{1,6}\s*' + re.escape(synonym),  # ## Synonym (any level)
+                                    re.escape(synonym),  # Just the text anywhere in content
+                                ]
+                                for syn_pattern in patterns_to_try:
+                                    if re.search(syn_pattern, content, re.IGNORECASE | re.MULTILINE):
+                                        logger.info(f"✓ Found synonym '{synonym}' for '{required}' in {rule.file}")
+                                        found_synonym = True
+                                        break
+                                if found_synonym:
+                                    break
+
+                        if found_synonym:
+                            continue  # Found synonym - skip to next requirement
+
                         # Not found - log detailed error
                         errors.append(f"{rule.file} missing section: {required}")
                         logger.warning(f"❌ Failed to find '{required}' in {rule.file}")
