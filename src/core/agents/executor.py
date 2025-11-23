@@ -167,9 +167,11 @@ class ExecutorAgent:
                 logger.info(f"🔄 ReAct Step {step}/{self.max_steps}")
 
                 try:
+                    # Since we've already chdir'd to work_dir_path, SDK should use current directory
+                    # This is more logical than passing absolute path again
                     response_text, _ = await run_claude_prompt(
                         current_prompt,
-                        str(work_dir_path),  # Use absolute path instead of self.work_dir
+                        ".",  # Current directory (already at work_dir_path)
                         model=self.model,
                         permission_mode=self.permission_mode,
                         timeout=self.timeout_seconds,
