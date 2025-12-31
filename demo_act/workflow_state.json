@@ -1,0 +1,18 @@
+{
+  "session_id": "e864f490-d773-4722-8173-3dfb2984b5ba",
+  "goal": "参考柳叶刀最新的养老相关文章，总结出养老行业在app行业的机会点，并给出养老行业在app行业的商业模式，格式为.md文件。",
+  "work_dir": "demo_act",
+  "status": "running",
+  "current_iteration": 0,
+  "max_iterations": 50,
+  "start_time": "2025-11-23T22:28:59.086202",
+  "last_update": "2025-11-23T22:28:59.086202",
+  "total_duration_seconds": 723.264376,
+  "history": [],
+  "persona_history": [],
+  "current_persona": "default",
+  "error_count": 0,
+  "last_error": null,
+  "successful_iterations": 0,
+  "failed_iterations": 0
+}

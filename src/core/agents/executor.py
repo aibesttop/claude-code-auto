@@ -138,7 +138,7 @@ class ExecutorAgent:
 
         # CRITICAL: Change process working directory to match work_dir
         # This ensures all file operations using relative paths are relative to work_dir
-        original_cwd = os.getcwd()
+        original_cwd = work_dir_path
         os.chdir(work_dir_path)
         logger.info(f"📂 Changed CWD from {original_cwd} to {work_dir_path}")
 
@@ -169,7 +169,8 @@ class ExecutorAgent:
                 try:
                     response_text, _ = await run_claude_prompt(
                         current_prompt,
-                        self.work_dir,
+                        "./", 
+                        # self.work_dir,
                         model=self.model,
                         permission_mode=self.permission_mode,
                         timeout=self.timeout_seconds,

@@ -68,7 +68,7 @@ class RoleExecutor:
         self.planner = None
         if use_planner:
             self.planner = PlannerAgent(
-                work_dir=work_dir,
+                work_dir=self.work_dir,
                 goal=role.mission.goal,
                 model=model,
                 timeout_seconds=timeout_seconds,
