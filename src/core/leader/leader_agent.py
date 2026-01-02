@@ -481,10 +481,22 @@ class LeaderAgent:
         """
         # Check if execution succeeded
         if not result.get('success', False):
+            validation_errors = (
+                result.get('validation_result', {}).get('errors', [])
+                or result.get('validation_errors', [])
+            )
+            if validation_errors:
+                summarized = ", ".join(validation_errors[:3])
+                if len(validation_errors) > 3:
+                    summarized += f" (+{len(validation_errors) - 3} more)"
+                failure_reason = f"Validation failed: {summarized}"
+            else:
+                failure_reason = result.get('exit_reason') or result.get('error') or "Unknown error"
+
             if iteration < self.max_mission_retries:
                 return InterventionDecision(
                     action=InterventionAction.RETRY,
-                    reason=f"Execution failed: {result.get('error', 'Unknown error')}"
+                    reason=f"Execution failed: {failure_reason}"
                 )
             else:
                 return InterventionDecision(
@@ -495,10 +507,16 @@ class LeaderAgent:
         # Check validation passed
         if not result.get('validation_passed', False):
             if iteration < self.max_mission_retries:
-                errors = result.get('validation_errors', [])
+                errors = (
+                    result.get('validation_errors', [])
+                    or result.get('validation_result', {}).get('errors', [])
+                )
+                summarized = ", ".join(errors[:3])
+                if len(errors) > 3:
+                    summarized += f" (+{len(errors) - 3} more)"
                 return InterventionDecision(
                     action=InterventionAction.RETRY,
-                    reason=f"Validation failed: {', '.join(errors)}"
+                    reason=f"Validation failed: {summarized}"
                 )
             else:
                 return InterventionDecision(

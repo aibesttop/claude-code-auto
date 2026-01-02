@@ -20,10 +20,14 @@ Goal: {goal}
 Current Plan:
 {plan_state}
 
+Required output files (use exact filenames):
+{required_files}
+
 Rules:
 - Create 3-7 atomic sub-tasks if plan is empty
 - Update status: done/pending
 - Output next task for executor
+- Ensure the plan includes producing all required files
 - Output ONLY JSON
 
 {{
@@ -55,6 +59,7 @@ class PlannerAgent:
         permission_mode: str = "bypassPermissions",
         max_retries: int = 3,
         retry_delay: float = 2.0,
+        required_files: Optional[List[str]] = None,
     ):
         # Use absolute path to avoid CWD-related issues
         self.work_dir = str(Path(work_dir).resolve())
@@ -66,6 +71,7 @@ class PlannerAgent:
         self.permission_mode = permission_mode
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self.required_files = required_files or []
 
         # Trace tracking
         self.last_result = None
@@ -113,9 +119,11 @@ class PlannerAgent:
 
         plan_state = json.dumps([t.model_dump() for t in self.plan.tasks], indent=2)
         try:
+            required_files_str = "\n".join(f"- {f}" for f in self.required_files) or "None."
             prompt = PLANNER_SYSTEM_PROMPT.format(
                 goal=self.goal,
-                plan_state=plan_state
+                plan_state=plan_state,
+                required_files=required_files_str,
             )
         except KeyError as e:
             logger.error(f"Failed to format planner prompt: {e}")

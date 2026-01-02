@@ -74,7 +74,8 @@ class RoleExecutor:
                 goal=role.mission.goal,
                 model=model,
                 timeout_seconds=timeout_seconds,
-                permission_mode=permission_mode
+                permission_mode=permission_mode,
+                required_files=self.role.output_standard.required_files,
             )
             logger.info(f"Initialized PlannerAgent for role: {self.role.name}")
 
@@ -258,7 +259,8 @@ class RoleExecutor:
 
             # 2. Execution phase
             try:
-                result = await self.executor.execute_task(next_task)
+                task_prompt = self._build_planner_task(next_task, context_str)
+                result = await self.executor.execute_task(task_prompt)
                 last_result = f"Task: {next_task}\nResult: {result}"
                 logger.info(f"Execution result: {result[:200]}...")
 
@@ -410,6 +412,34 @@ Required files (use these exact filenames):
 2. Generate all required files using RELATIVE paths
 3. Ensure outputs meet validation rules
 4. Use the appropriate tools for this task type
+"""
+
+    def _build_planner_task(self, next_task: str, context_str: str) -> str:
+        """Build a constrained subtask prompt for planner-driven execution."""
+        required_files_str = "\n".join(f"- {f}" for f in self.role.output_standard.required_files) or "None."
+        template_info = ""
+        if self.role.output_standard.template:
+            template_info = f"\n\nYou MUST follow the standard defined in: {self.role.output_standard.template}"
+
+        return f"""
+# Subtask
+{next_task}
+
+## Context from Previous Roles
+{context_str}
+
+## Output Standard{template_info}
+
+Working Directory: {self.work_dir}
+IMPORTANT: Use RELATIVE paths for all file operations.
+
+Required files (use these exact filenames if this subtask produces deliverables):
+{required_files_str}
+
+## Instructions
+1. Use tools when needed
+2. If you write outputs, use the required filenames exactly
+3. Do not invent alternate filenames
 """
     
     def _build_retry_task(self, errors: list) -> str:

@@ -15,6 +15,7 @@ from src.core.agents.persona import PersonaEngine
 from src.core.agents.sdk_client import run_claude_prompt
 
 logger = get_logger()
+FINAL_ANSWER_PATTERN = re.compile(r"(?im)^\s*(?:#+\s*)?Final Answer\s*:?\s*")
 
 REACT_SYSTEM_PROMPT = """
 You are an autonomous Executor Agent.
@@ -123,6 +124,13 @@ class ExecutorAgent:
             logger.error(f"Failed to parse JSON args: {input_str[:200]}...")
             return action, None
 
+    def _extract_final_answer(self, text: str) -> Optional[str]:
+        """Extracts a final answer block, allowing common markdown variants."""
+        match = FINAL_ANSWER_PATTERN.search(text)
+        if not match:
+            return None
+        return text[match.end():].strip()
+
     async def execute_task(self, task_description: str) -> str:
         """Executes a single sub-task"""
         logger.info(f"🤖 Executor started task: {task_description}")
@@ -161,6 +169,8 @@ class ExecutorAgent:
 
             current_prompt = "\n\n".join(history)
             step = 0
+            no_action_count = 0
+            max_no_action = 5
 
             while step < self.max_steps:
                 step += 1
@@ -187,15 +197,16 @@ class ExecutorAgent:
 
                 logger.debug(f"Claude Response:\n{response_text}")
 
-                if "Final Answer:" in response_text:
-                    final_answer = response_text.split("Final Answer:")[1].strip()
+                final_answer = self._extract_final_answer(response_text)
+                if final_answer is not None:
                     logger.info(f"Task Completed: {final_answer}")
                     return final_answer
 
                 action, args = self._parse_action(response_text)
 
                 if action and args is not None:
-                    logger.info(f"🛠️ Calling Tool: {action}")
+                    no_action_count = 0
+                    logger.info(f"Calling Tool: {action}")
                     result = None
                     try:
                         result = registry.execute(action, args)
@@ -210,15 +221,24 @@ class ExecutorAgent:
                     current_prompt = "\n\n".join(history)
 
                 else:
-                    if "Thought:" in response_text and not action:
+                    no_action_count += 1
+                    if action and args is None:
+                        logger.warning("Action Input missing or invalid JSON.")
+                        history.append(response_text.strip())
+                        history.append("System: I saw an Action but the Action Input was missing or invalid JSON. Please restate the tool call using Action and Action Input with valid JSON.")
+                        current_prompt = "\n\n".join(history)
+                    elif "Thought:" in response_text and not action:
                         history.append(response_text.strip())
                         history.append("System: I did not see a valid 'Action:' and 'Action Input:'. Please format your tool call correctly.")
                         current_prompt = "\n\n".join(history)
                     else:
-                        logger.warning("⚠️ No action detected and no Final Answer.")
+                        logger.warning("No action detected and no Final Answer.")
                         history.append(response_text.strip())
                         history.append("System: Please continue. If done, say 'Final Answer:'.")
                         current_prompt = "\n\n".join(history)
+                    if no_action_count >= max_no_action:
+                        logger.error("Repeated invalid responses without Action/Final Answer. Aborting.")
+                        return f"Error: No valid Action/Final Answer after {no_action_count} consecutive steps."
 
             return "Error: Max steps reached without completion."
 
