@@ -14,6 +14,7 @@ mappings:
     mcp_servers:
       - brave_search
       - filesystem
+      - sequential-thinking  # Enhanced reasoning for complex analysis
 
   # Documentation writing missions
   documentation:
@@ -36,6 +37,7 @@ mappings:
     mcp_servers:
       - filesystem
       - git
+      - serena  # Enhanced code analysis and project context
 
   # Architecture design missions
   architecture_design:
@@ -46,6 +48,7 @@ mappings:
       - web_search
     mcp_servers:
       - filesystem
+      - sequential-thinking  # Step-by-step reasoning for complex architecture
 
   # SEO strategy missions
   seo_strategy:
@@ -78,6 +81,64 @@ mappings:
     mcp_servers:
       - filesystem
       - postgres
+
+  # Web automation missions (NEW)
+  web_automation:
+    required_tools:
+      - web_search
+      - write_file
+    optional_tools:
+      - run_command
+    mcp_servers:
+      - playwright
+      - browsermcp
+      - filesystem
+
+  # Web scraping missions (NEW)
+  web_scraping:
+    required_tools:
+      - web_search
+      - write_file
+    optional_tools:
+      - run_command
+    mcp_servers:
+      - playwright
+      - browsermcp
+      - filesystem
+
+  # Code analysis missions (NEW)
+  code_analysis:
+    required_tools:
+      - read_file
+      - write_file
+    optional_tools:
+      - run_command
+    mcp_servers:
+      - serena
+      - filesystem
+      - git
+
+  # Complex problem solving missions (NEW)
+  complex_problem_solving:
+    required_tools:
+      - write_file
+      - read_file
+    optional_tools:
+      - web_search
+    mcp_servers:
+      - sequential-thinking
+      - filesystem
+
+  # Long-term memory missions (NEW)
+  knowledge_management:
+    required_tools:
+      - write_file
+      - read_file
+    optional_tools:
+      - web_search
+    mcp_servers:
+      - context7  # Upstash for semantic search and long-term memory
+      - filesystem
 
   # General missions (fallback)
   general:

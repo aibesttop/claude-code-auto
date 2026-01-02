@@ -59,3 +59,75 @@ mcp_servers:
       - list_tables
       - describe_table
     description: "PostgreSQL database access"
+
+  # Sequential thinking server for step-by-step reasoning
+  sequential-thinking:
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-sequential-thinking"
+    capabilities:
+      - step_by_step_reasoning
+      - thought_chain
+      - problem_breakdown
+    description: "Sequential thinking for complex problem-solving"
+
+  # Playwright browser automation
+  playwright:
+    command: npx
+    args:
+      - "-y"
+      - "@playwright/mcp@latest"
+    capabilities:
+      - browser_automation
+      - page_navigation
+      - screenshot
+      - form_interaction
+      - element_extraction
+    description: "Browser automation using Playwright"
+
+  # Context7 by Upstash for context management
+  context7:
+    command: npx
+    args:
+      - "-y"
+      - "@upstash/context7-mcp"
+    env:
+      UPSTASH_REDIS_REST_URL: "${UPSTASH_REDIS_REST_URL}"
+      UPSTASH_REDIS_REST_TOKEN: "${UPSTASH_REDIS_REST_TOKEN}"
+    capabilities:
+      - context_storage
+      - context_retrieval
+      - semantic_search
+      - long_term_memory
+    description: "Context management and semantic search by Upstash"
+
+  # Serena desktop-app context server
+  serena:
+    command: "C:\\Users\\abely\\serena\\.venv\\Scripts\\serena-mcp-server.exe"
+    args:
+      - "--context"
+      - "desktop-app"
+      - "--mode"
+      - "interactive"
+      - "editing"
+    capabilities:
+      - code_analysis
+      - file_operations
+      - symbol_search
+      - project_context
+    description: "Desktop app context with interactive/editing modes"
+
+  # BrowserMCP for browser automation
+  browsermcp:
+    command: npx
+    args:
+      - "-y"
+      - "@browsermcp/mcp@latest"
+    capabilities:
+      - web_automation
+      - page_interaction
+      - javascript_execution
+      - network_monitoring
+      - console_access
+    description: "Browser automation and web interaction tools"
