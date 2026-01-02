@@ -90,6 +90,8 @@ async def run_leader_mode(config, work_dir, logger, event_store, cost_tracker, s
         else:
             timeout_dict = None
 
+        logger.info(f"🎯 Using Agentic Skill Prompts v2.0")
+
         leader = LeaderAgent(
             work_dir=str(work_dir),
             model=config.claude.model,

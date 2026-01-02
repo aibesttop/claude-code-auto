@@ -116,7 +116,7 @@ class LeaderAgent:
 
         # Components
         self.mission_decomposer = MissionDecomposer(model=model, work_dir=str(self.work_dir))
-        self.resource_registry = ResourceRegistry()
+        self.resource_registry = ResourceRegistry()  # v2.0 Agentic skills by default
         self.role_registry = RoleRegistry()
         self.dependency_resolver = DependencyResolver()
         self.team_assembler = TeamAssembler(self.role_registry)

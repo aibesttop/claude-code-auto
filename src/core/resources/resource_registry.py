@@ -26,11 +26,25 @@ class MCPServerConfig:
 
 @dataclass
 class SkillPrompt:
-    """Skill prompt for role enhancement"""
+    """
+    Skill prompt for role enhancement
+
+    Supports both v1.0 (basic) and v2.0 (agentic) formats.
+    """
     name: str
     category: str
     prompt: str
     tags: List[str] = field(default_factory=list)
+
+    # v2.0 Agentic fields (optional for backward compatibility)
+    version: str = "1.0"
+    role: str = ""
+    capabilities: List[str] = field(default_factory=list)
+    logic_flow: str = ""
+    constraints: List[str] = field(default_factory=list)
+    reflection: List[str] = field(default_factory=list)
+    tool_preference: Dict[str, List[str]] = field(default_factory=dict)
+    suggested_models: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -107,7 +121,9 @@ class ResourceRegistry:
             logger.error(f"Failed to load MCP config: {e}")
 
     def _load_skills(self):
-        """Load skill prompts from YAML"""
+        """
+        Load skill prompts from YAML (v2.0 Agentic format).
+        """
         config_file = self.config_dir / "skill_prompts.yaml"
 
         if not config_file.exists():
@@ -120,17 +136,62 @@ class ResourceRegistry:
                 data = yaml.safe_load(f)
 
             for name, config in data.get('skills', {}).items():
+                # v2.0 Agentic format
                 self.skills[name] = SkillPrompt(
                     name=name,
                     category=config.get('category', ''),
-                    prompt=config.get('prompt', ''),
-                    tags=config.get('tags', [])
+                    prompt=self._build_v2_prompt(config),  # Build from structured fields
+                    tags=config.get('tags', []),
+                    version=config.get('version', '2.0'),
+                    role=config.get('role', ''),
+                    capabilities=config.get('capabilities', []),
+                    logic_flow=config.get('logic_flow', ''),
+                    constraints=config.get('constraints', []),
+                    reflection=config.get('reflection', []),
+                    tool_preference=config.get('tool_preference', {}),
+                    suggested_models=config.get('suggested_models', [])
                 )
 
-            logger.info(f"✅ Loaded {len(self.skills)} skill prompts")
+            logger.info(f"✅ Loaded {len(self.skills)} agentic skill prompts (v2.0)")
 
         except Exception as e:
             logger.error(f"Failed to load skills config: {e}")
+
+    def _build_v2_prompt(self, config: Dict) -> str:
+        """
+        Build structured prompt from v2.0 agentic skill fields.
+
+        Combines logic_flow, constraints, and reflection into a coherent prompt.
+        """
+        parts = []
+
+        # Role and capabilities
+        if config.get('role'):
+            parts.append(f"**Role**: {config['role']}\n")
+
+        if config.get('capabilities'):
+            caps = '\n'.join(f"- {cap}" for cap in config['capabilities'])
+            parts.append(f"**Core Capabilities**:\n{caps}\n")
+
+        # Logic flow
+        if config.get('logic_flow'):
+            parts.append(f"**Process**:\n{config['logic_flow']}\n")
+
+        # Constraints
+        if config.get('constraints'):
+            constraints = '\n'.join(f"- {c}" for c in config['constraints'])
+            parts.append(f"**Constraints**:\n{constraints}\n")
+
+        # Reflection
+        if config.get('reflection'):
+            reflection = '\n'.join(f"- {q}" for q in config['reflection'])
+            parts.append(f"**Self-Reflection Questions**:\n{reflection}\n")
+
+        # Tool preference (as guidance, not strict requirement)
+        if config.get('tool_preference'):
+            parts.append(f"**Tool Preferences**: Use appropriate tools from your available tool set.\n")
+
+        return '\n'.join(parts)
 
     def _load_tool_mappings(self):
         """Load tool mappings from YAML"""
@@ -290,6 +351,26 @@ class ResourceRegistry:
     def get_mcp_by_name(self, name: str) -> Optional[MCPServerConfig]:
         """Get MCP server by name"""
         return self.mcp_servers.get(name)
+
+    def get_suggested_models(self, skill_name: str) -> List[str]:
+        """
+        Get suggested models for a skill (v2.0 feature).
+
+        Args:
+            skill_name: Name of the skill
+
+        Returns:
+            List of suggested model names, or empty list if using v1.0
+        """
+        skill = self.skills.get(skill_name)
+        if not skill:
+            return []
+
+        # Only v2.0 skills have suggested_models
+        if skill.version == "2.0":
+            return skill.suggested_models
+
+        return []
 
     def list_all_resources(self) -> Dict[str, Any]:
         """List all available resources"""
