@@ -5,7 +5,7 @@ Executes specific sub-tasks using the ReAct pattern.
 import json
 import re
 import os
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional, List
 from pathlib import Path
 from datetime import datetime
 
@@ -45,6 +45,7 @@ Final Answer: [Your summary of what was done]
 1. You must use the tools to verify your work.
 2. "Action Input" must be valid JSON.
 3. Do not make up tools.
+4. If required files are listed in the task, do NOT claim completion until they exist on disk.
 """
 
 
@@ -131,6 +132,30 @@ class ExecutorAgent:
             return None
         return text[match.end():].strip()
 
+    def _extract_required_files(self, task_description: str) -> List[str]:
+        """Extract required file list from the task description."""
+        required_files = []
+        in_section = False
+        for line in task_description.splitlines():
+            stripped = line.strip()
+            if not in_section:
+                if stripped.lower().startswith("required files"):
+                    in_section = True
+                continue
+            if not stripped or stripped.startswith("##"):
+                break
+            if stripped.startswith("-"):
+                filename = stripped.lstrip("-").strip()
+                if filename:
+                    required_files.append(filename)
+        return required_files
+
+    def _is_verification_task(self, task_description: str) -> bool:
+        """Best-effort check to avoid blocking verification-only tasks."""
+        lowered = task_description.lower()
+        keywords = ("verify", "check", "validate", "audit", "review")
+        return any(keyword in lowered for keyword in keywords)
+
     async def execute_task(self, task_description: str) -> str:
         """Executes a single sub-task"""
         logger.info(f"🤖 Executor started task: {task_description}")
@@ -143,6 +168,8 @@ class ExecutorAgent:
         work_dir_path = Path(self.work_dir).resolve()
         work_dir_path.mkdir(parents=True, exist_ok=True)
         logger.info(f"📁 Work directory: {work_dir_path}")
+        required_files = self._extract_required_files(task_description)
+        enforce_required_files = bool(required_files) and not self._is_verification_task(task_description)
 
         # CRITICAL: Change process working directory to match work_dir
         # This ensures all file operations using relative paths are relative to work_dir
@@ -199,6 +226,28 @@ class ExecutorAgent:
 
                 final_answer = self._extract_final_answer(response_text)
                 if final_answer is not None:
+                    if enforce_required_files:
+                        missing = [
+                            filename for filename in required_files
+                            if not (work_dir_path / filename).exists()
+                        ]
+                        if missing:
+                            logger.warning(f"Final Answer provided but required files missing: {missing}")
+                            history.append(response_text.strip())
+                            history.append(
+                                "System: Missing required files: "
+                                + ", ".join(missing)
+                                + ". Use write_file to create them before finalizing."
+                            )
+                            current_prompt = "\n\n".join(history)
+                            no_action_count += 1
+                            if no_action_count >= max_no_action:
+                                logger.error("Repeated invalid responses without required files. Aborting.")
+                                return (
+                                    "Error: Final Answer provided but required files missing after "
+                                    f"{no_action_count} consecutive steps."
+                                )
+                            continue
                     logger.info(f"Task Completed: {final_answer}")
                     return final_answer
 
@@ -266,7 +315,10 @@ class ExecutorAgent:
             Path to trace file or None
         """
         try:
-            trace_dir = Path("logs/trace")
+            # CRITICAL: Use absolute path from project root to avoid CWD issues
+            # When executor changes to work_dir, relative paths would resolve incorrectly
+            project_root = Path(__file__).resolve().parent.parent.parent
+            trace_dir = project_root / "logs" / "trace"
             trace_dir.mkdir(parents=True, exist_ok=True)
             
             filename = f"{session_id}_{role_name}_executor_step{step}.md"
