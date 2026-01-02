@@ -70,11 +70,7 @@ class RoleExecutor:
         self.planner = None
         if use_planner:
             self.planner = PlannerAgent(
-<<<<<<< HEAD
-                work_dir=self.work_dir,
-=======
                 work_dir=str(self.work_dir),  # Use resolved absolute path
->>>>>>> e5caba88dacdd6a00e56e8bd8f33a68f1908aac5
                 goal=role.mission.goal,
                 model=model,
                 timeout_seconds=timeout_seconds,

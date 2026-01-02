@@ -65,16 +65,9 @@ class PlannerAgent:
         max_retries: int = 3,
         retry_delay: float = 2.0,
     ):
-<<<<<<< HEAD
-        # 
-        self.work_dir = Path(work_dir).resolve()
-        logger.info(f"📁 PlannerAgent work_dir (absolute): {self.work_dir}")
-=======
         # Use absolute path to avoid CWD-related issues
         self.work_dir = str(Path(work_dir).resolve())
         logger.info(f"📁 PlannerAgent work_dir (absolute): {self.work_dir}")
-
->>>>>>> e5caba88dacdd6a00e56e8bd8f33a68f1908aac5
         self.goal = goal
         self.plan = Plan()
         self.model = model

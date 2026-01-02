@@ -132,7 +132,7 @@ class WorkflowConfig(BaseModel):
 
     @classmethod
     def from_yaml(cls, config_path: str = "config.yaml") -> "WorkflowConfig":
-        config_file = Path(config_path)
+        config_file = Path(config_path).resolve()
         if not config_file.exists():
             raise FileNotFoundError(f"配置文件不存在 {config_path}")
 
@@ -140,7 +140,23 @@ class WorkflowConfig(BaseModel):
             config_data = yaml.safe_load(f)
 
         config_data = cls._apply_env_overrides(config_data)
+        config_data = cls._resolve_relative_dirs(config_data, config_file.parent)
         return cls(**config_data)
+
+    @staticmethod
+    def _resolve_relative_dirs(config_data: dict, base_dir: Path) -> dict:
+        directories = config_data.get("directories") or {}
+        for key in ("work_dir", "mirror_dir", "logs_dir"):
+            value = directories.get(key)
+            if not value:
+                continue
+            path = Path(value)
+            if not path.is_absolute():
+                directories[key] = str((base_dir / path).resolve())
+            else:
+                directories[key] = str(path.resolve())
+        config_data["directories"] = directories
+        return config_data
 
     @staticmethod
     def _apply_env_overrides(config_data: dict) -> dict:
