@@ -229,7 +229,14 @@ class RoleExecutor:
                 next_task = await self.planner.get_next_step(last_result)
             except Exception as e:
                 logger.error(f"Planner failed: {e}")
-                break
+
+                # Degradation: If planner fails on first iteration, execute directly
+                if iteration == 1:
+                    logger.warning("⚠️ Planner failed on first attempt, falling back to direct execution")
+                    next_task = self.role.mission.goal
+                else:
+                    logger.error("❌ Planner failed after initial planning, aborting")
+                    break
 
             # Export plan trace
             try:
@@ -267,9 +274,24 @@ class RoleExecutor:
                     logger.warning(f"Failed to export ReAct trace: {e}")
 
             except Exception as e:
-                logger.error(f"Executor failed: {e}")
-                last_result = f"Task: {next_task}\nFailed with error: {e}"
-                continue
+                error_str = str(e).lower()
+
+                # Special handling for timeout errors
+                if "timeout" in error_str:
+                    logger.error(f"⏰ Executor timeout after {self.executor.timeout_seconds}s")
+
+                    # If this is the first execution failure, try to break task into smaller pieces
+                    if iteration == 1:
+                        logger.warning("⚠️ First execution timed out - task may be too complex")
+                        logger.warning("💡 Suggestion: Consider breaking down the mission into smaller sub-missions")
+
+                    # Continue to next iteration (may succeed with partial work)
+                    last_result = f"Task: {next_task}\nFailed with timeout: {e}"
+                    continue
+                else:
+                    logger.error(f"Executor failed: {e}")
+                    last_result = f"Task: {next_task}\nFailed with error: {e}"
+                    continue
 
             # 3. Validation phase
             validation = await self._validate_outputs()

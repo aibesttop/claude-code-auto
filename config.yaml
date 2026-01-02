@@ -50,6 +50,12 @@ claude:
   permission_mode: "bypassPermissions"
   model: "claude-sonnet-4-5"
   timeout_seconds: 300
+  # Timeout hierarchy (higher levels get more time)
+  timeouts:
+    planner: 600      # Planner: 10 min (first call: 2x = 20 min)
+    executor: 300     # Executor: 5 min per ReAct step
+    validator: 120    # Semantic validator: 2 min
+    decomposer: 180   # Mission decomposer: 3 min
 
 # Performance
 performance:

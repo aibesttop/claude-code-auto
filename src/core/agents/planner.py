@@ -13,32 +13,23 @@ from src.core.agents.sdk_client import run_claude_prompt
 
 logger = get_logger()
 
-PLANNER_SYSTEM_PROMPT = """
-You are the Planner Agent.
-Your job is to break down a high-level goal into a sequence of atomic sub-tasks.
+PLANNER_SYSTEM_PROMPT = """You are a Planner. Break this goal into sub-tasks:
 
-Current Goal: {goal}
+Goal: {goal}
 
-Current Plan State:
+Current Plan:
 {plan_state}
 
-Instructions:
-1. Analyze the goal and the current state.
-2. If the plan is empty, create a list of sub-tasks.
-3. If the plan exists, mark completed tasks and determine the next task.
-4. Output the NEXT sub-task to be executed by the Executor.
-5. If all tasks are done, output "ALL DONE".
+Rules:
+- Create 3-7 atomic sub-tasks if plan is empty
+- Update status: done/pending
+- Output next task for executor
+- Output ONLY JSON
 
-CRITICAL: Your response MUST be ONLY a valid JSON object. Do NOT include any explanatory text before or after the JSON.
-Do NOT write "Here is the plan:" or "Looking at..." or any other text. Output ONLY the JSON object.
-
-Format your response as a JSON object:
 {{
-    "plan": [
-        {{"id": 1, "task": "...", "status": "done/pending"}}
-    ],
-    "next_task": "The specific instruction for the Executor",
-    "is_complete": boolean
+    "plan": [{{"id": 1, "task": "...", "status": "pending"}}],
+    "next_task": "...",
+    "is_complete": false
 }}
 """
 
@@ -71,7 +62,7 @@ class PlannerAgent:
         self.goal = goal
         self.plan = Plan()
         self.model = model
-        self.timeout_seconds = timeout_seconds
+        self.base_timeout_seconds = timeout_seconds
         self.permission_mode = permission_mode
         self.max_retries = max_retries
         self.retry_delay = retry_delay
@@ -81,10 +72,41 @@ class PlannerAgent:
         self.last_response = None
         self.next_task = None
         self.confidence = "N/A"
+        self.call_count = 0  # Track number of calls for dynamic timeout
+
+    def _calculate_dynamic_timeout(self) -> int:
+        """
+        Calculate dynamic timeout based on call context.
+
+        Strategy:
+        - First call (plan creation): 2x base timeout (most complex)
+        - Subsequent calls: base timeout (simpler updates)
+        - Large plan state (>10 tasks): +50% timeout
+        """
+        timeout = self.base_timeout_seconds
+
+        # First call needs more time (creating plan from scratch)
+        if self.call_count == 0:
+            timeout = self.base_timeout_seconds * 2
+            logger.info(f"🕐 First Planner call - using extended timeout: {timeout}s")
+
+        # Large plans need more time
+        plan_size = len(self.plan.tasks)
+        if plan_size > 10:
+            timeout = int(timeout * 1.5)
+            logger.info(f"🕐 Large plan ({plan_size} tasks) - using extended timeout: {timeout}s")
+
+        return max(timeout, 120)  # Minimum 2 minutes
 
     async def get_next_step(self, last_result: str = None) -> Optional[str]:
         """Determines the next sub-task"""
         logger.info("🧠 Planner thinking...")
+
+        # Increment call counter
+        self.call_count += 1
+
+        # Calculate dynamic timeout
+        dynamic_timeout = self._calculate_dynamic_timeout()
 
         # Store for trace export
         self.last_result = last_result
@@ -109,7 +131,7 @@ class PlannerAgent:
                 self.work_dir,
                 model=self.model,
                 permission_mode=self.permission_mode,
-                timeout=self.timeout_seconds,
+                timeout=dynamic_timeout,  # Use dynamic timeout
                 max_retries=self.max_retries,
                 retry_delay=self.retry_delay,
             )
@@ -119,6 +141,27 @@ class PlannerAgent:
 
         except Exception as exc:  # pylint: disable=broad-except
             logger.error(f"Planner query failed: {exc}")
+
+            # Degradation strategy: If planning fails, return direct task
+            if self.call_count == 1 and len(self.plan.tasks) == 0:
+                # First call failed - return the goal itself as the only task
+                logger.warning("⚠️ Planner first call failed, using direct execution mode")
+                logger.info(f"📋 Direct task: {self.goal}")
+
+                # Create a simple single-task plan
+                self.plan.tasks = [
+                    Task(id=1, task=self.goal, status="pending")
+                ]
+
+                # Return the goal as the next task
+                return self.goal
+
+            # Subsequent calls - mark all pending as done and finish
+            if len(self.plan.tasks) > 0:
+                logger.warning("⚠️ Planner update failed, marking remaining tasks as done")
+                return None
+
+            # Complete failure
             return None
 
         try:

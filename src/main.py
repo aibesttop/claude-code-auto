@@ -82,14 +82,22 @@ async def run_leader_mode(config, work_dir, logger, event_store, cost_tracker, s
     )
 
     try:
-        # Initialize Leader Agent
+        # Initialize Leader Agent with timeout hierarchy
+        timeouts = getattr(config.claude, 'timeouts', None)
+        if timeouts and isinstance(timeouts, dict):
+            # Convert timeouts dict to regular dict if it's a config object
+            timeout_dict = {k: v for k, v in timeouts.items()}
+        else:
+            timeout_dict = None
+
         leader = LeaderAgent(
             work_dir=str(work_dir),
             model=config.claude.model,
             max_mission_retries=config.leader.max_mission_retries,
             quality_threshold=config.leader.quality_threshold,
             budget_limit_usd=config.cost_control.max_budget_usd if config.cost_control.enabled else None,
-            session_id=session_id
+            session_id=session_id,
+            timeouts=timeout_dict
         )
 
         # Execute with Leader
@@ -309,7 +317,10 @@ async def main(config_path: str = "config.yaml"):
         session_file.write_text(session_id, encoding="utf-8")
         config.get_backup_session_file_path().write_text(session_id, encoding="utf-8")
 
-    state_manager = StateManager(config.get_state_file_path())
+    state_manager = StateManager(
+        config.get_state_file_path(),
+        mirror_dir=config.get_mirror_dir_path()
+    )
     state = state_manager.load_or_create(
         session_id=session_id,
         goal=config.task.goal,

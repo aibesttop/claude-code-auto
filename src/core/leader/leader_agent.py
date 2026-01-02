@@ -80,7 +80,8 @@ class LeaderAgent:
         max_mission_retries: int = 3,
         quality_threshold: float = 70.0,
         budget_limit_usd: Optional[float] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        timeouts: Dict[str, int] = None
     ):
         """
         Initialize Leader Agent.
@@ -92,6 +93,7 @@ class LeaderAgent:
             quality_threshold: Minimum quality score (0-100)
             budget_limit_usd: Budget limit in USD
             session_id: Session ID for tracking
+            timeouts: Dict of timeout values for different components
         """
         # Use absolute path to avoid CWD-related issues
         self.work_dir = Path(work_dir).resolve()
@@ -102,6 +104,15 @@ class LeaderAgent:
         self.max_mission_retries = max_mission_retries
         self.quality_threshold = quality_threshold
         self.budget_limit_usd = budget_limit_usd
+
+        # Timeout hierarchy with defaults
+        default_timeouts = {
+            "planner": 600,
+            "executor": 300,
+            "validator": 120,
+            "decomposer": 180
+        }
+        self.timeouts = {**default_timeouts, **(timeouts or {})}
 
         # Components
         self.mission_decomposer = MissionDecomposer(model=model, work_dir=str(self.work_dir))
@@ -321,7 +332,7 @@ class LeaderAgent:
             executor = ExecutorAgent(
                 work_dir=str(self.work_dir),
                 model=self.model,
-                timeout_seconds=300,
+                timeout_seconds=self.timeouts.get("executor", 300),
                 permission_mode="bypassPermissions"
             )
 
@@ -333,6 +344,8 @@ class LeaderAgent:
                 session_id=self.context.session_id,
                 use_planner=True,  # Enable planner for better task decomposition
                 model=self.model,
+                timeout_seconds=self.timeouts.get("planner", 600),  # Use planner timeout
+                permission_mode="bypassPermissions",
                 skill_prompt=skill_prompt.prompt if skill_prompt else None,
                 allowed_tools=required_tools if required_tools else None
             )

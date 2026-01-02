@@ -6,6 +6,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 from pathlib import Path
+import shutil
 import json
 from enum import Enum
 
@@ -234,9 +235,17 @@ class ExecutionState:
 class StateManager:
     """状态管理器"""
 
-    def __init__(self, state_file_path: Path):
+    def __init__(
+        self,
+        state_file_path: Path,
+        mirror_dir: Optional[Path] = None,
+        mirror_on_terminal: bool = True
+    ):
         self.state_file_path = state_file_path
         self._state: Optional[ExecutionState] = None
+        self.mirror_dir = mirror_dir
+        self.mirror_on_terminal = mirror_on_terminal
+        self._last_mirror_signature: Optional[tuple] = None
 
     def load_or_create(
         self,
@@ -285,6 +294,54 @@ class StateManager:
         if self._state is None:
             raise RuntimeError("没有可保存的状态")
         self._state.save(self.state_file_path)
+        if self.mirror_on_terminal:
+            self._mirror_work_dir_if_needed()
+
+    def _mirror_work_dir_if_needed(self):
+        if self._state is None or self.mirror_dir is None:
+            return
+        if self._state.status not in {
+            WorkflowStatus.COMPLETED,
+            WorkflowStatus.FAILED,
+            WorkflowStatus.TIMEOUT,
+            WorkflowStatus.EMERGENCY_STOP,
+        }:
+            return
+
+        signature = (self._state.session_id, self._state.status, self._state.current_iteration)
+        if signature == self._last_mirror_signature:
+            return
+
+        work_dir = Path(self._state.work_dir).resolve()
+        mirror_dir = Path(self.mirror_dir).resolve()
+
+        if self._is_subpath(mirror_dir, work_dir):
+            print(f"⚠️ mirror_dir is inside work_dir, skipping mirror: {mirror_dir}")
+            return
+        if self._is_subpath(work_dir, mirror_dir):
+            print(f"⚠️ work_dir is inside mirror_dir, skipping mirror: {work_dir}")
+            return
+
+        mirror_dir.mkdir(parents=True, exist_ok=True)
+        dst = mirror_dir / f"{work_dir.name}_mirror"
+        if dst.exists():
+            shutil.rmtree(dst)
+        shutil.copytree(work_dir, dst)
+
+        for session_name in ("session_id.txt", "session_id.backup.txt"):
+            session_file = dst / session_name
+            if session_file.exists():
+                session_file.unlink()
+
+        self._last_mirror_signature = signature
+
+    @staticmethod
+    def _is_subpath(path: Path, parent: Path) -> bool:
+        try:
+            path.relative_to(parent)
+            return True
+        except ValueError:
+            return False
 
     def update_and_save(self, **kwargs):
         """更新状态并保存"""
