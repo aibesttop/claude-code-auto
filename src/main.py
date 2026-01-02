@@ -412,6 +412,11 @@ async def main(config_path: str = "config.yaml"):
             return
         else:
             logger.warning("⚠️ Leader mode failed, falling back to original mode")
+            if not config.error_handling.continue_on_error:
+                logger.error("Leader mode failed and continue_on_error is False. Stopping execution.")
+                state.status = WorkflowStatus.FAILED
+                state_manager.save()
+                return
             # Continue to check team mode or original mode below
 
     # Check for team mode activation

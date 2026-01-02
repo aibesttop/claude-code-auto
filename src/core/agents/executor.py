@@ -18,34 +18,20 @@ logger = get_logger()
 FINAL_ANSWER_PATTERN = re.compile(r"(?im)^\s*(?:#+\s*)?Final Answer\s*:?\s*")
 
 REACT_SYSTEM_PROMPT = """
-You are an autonomous Executor Agent.
-Your goal is to complete the assigned sub-task using the available tools.
+You are a task executor. Use the ReAct format:
 
-## Tools Available:
+Thought: [what you want to do]
+Action: [tool name from list below]
+Action Input: [JSON input]
+
+Tools:
 {tool_descriptions}
 
-## Format:
-To solve the task, you must use the following format:
+CRITICAL: Always use the exact format above. Action Input MUST be valid JSON.
 
-Thought: [Your reasoning about what to do next]
-Action: [The name of the tool to use]
-Action Input: [The JSON arguments for the tool]
-
-... (Wait for Observation) ...
-
-Observation: [The result of the tool execution]
-
-... (Repeat Thought/Action/Observation as needed) ...
-
-When you have completed the task, use the format:
+When done:
 Thought: I have completed the task.
-Final Answer: [Your summary of what was done]
-
-## Constraints:
-1. You must use the tools to verify your work.
-2. "Action Input" must be valid JSON.
-3. Do not make up tools.
-4. If required files are listed in the task, do NOT claim completion until they exist on disk.
+Final Answer: [summary]
 """
 
 
@@ -198,6 +184,7 @@ class ExecutorAgent:
             step = 0
             no_action_count = 0
             max_no_action = 5
+            tool_calls = 0
 
             while step < self.max_steps:
                 step += 1
@@ -224,9 +211,36 @@ class ExecutorAgent:
 
                 logger.debug(f"Claude Response:\n{response_text}")
 
+                # Debug: Log response to help diagnose "No action detected" issue
+                logger.info(f"📝 Response length: {len(response_text)} chars")
+                if "Action:" in response_text:
+                    logger.info("✓ Response contains 'Action:'")
+                else:
+                    logger.warning("✗ Response MISSING 'Action:' keyword")
+                if "Thought:" in response_text:
+                    logger.info("✓ Response contains 'Thought:'")
+                if "Final Answer:" in response_text:
+                    logger.info("✓ Response contains 'Final Answer:'")
+
                 final_answer = self._extract_final_answer(response_text)
                 if final_answer is not None:
                     if enforce_required_files:
+                        if tool_calls == 0:
+                            logger.warning("Final Answer provided but no tools were called.")
+                            history.append(response_text.strip())
+                            history.append(
+                                "System: You must call the appropriate tools before finalizing. "
+                                "Use web_search/read_file/write_file as needed."
+                            )
+                            current_prompt = "\n\n".join(history)
+                            no_action_count += 1
+                            if no_action_count >= max_no_action:
+                                logger.error("Repeated invalid responses without tool use. Aborting.")
+                                return (
+                                    "Error: Final Answer provided but no tools were called after "
+                                    f"{no_action_count} consecutive steps."
+                                )
+                            continue
                         missing = [
                             filename for filename in required_files
                             if not (work_dir_path / filename).exists()
@@ -253,8 +267,14 @@ class ExecutorAgent:
 
                 action, args = self._parse_action(response_text)
 
+                # Debug: Log parsing results
+                logger.info(f"🔍 Parsed: action={action}, args={'None' if args is None else f'<{len(str(args))} chars>'}")
+                if action and args is None:
+                    logger.warning(f"⚠️ Action '{action}' found but args is None - check JSON format")
+
                 if action and args is not None:
                     no_action_count = 0
+                    tool_calls += 1
                     logger.info(f"Calling Tool: {action}")
                     result = None
                     try:
@@ -315,10 +335,10 @@ class ExecutorAgent:
             Path to trace file or None
         """
         try:
-            # CRITICAL: Use absolute path from project root to avoid CWD issues
-            # When executor changes to work_dir, relative paths would resolve incorrectly
-            project_root = Path(__file__).resolve().parent.parent.parent
-            trace_dir = project_root / "logs" / "trace"
+            # CRITICAL: Use configured logs directory to avoid CWD issues
+            from src.config import get_config
+            logs_dir = Path(get_config().directories.logs_dir)
+            trace_dir = logs_dir / "trace"
             trace_dir.mkdir(parents=True, exist_ok=True)
             
             filename = f"{session_id}_{role_name}_executor_step{step}.md"

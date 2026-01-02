@@ -7,8 +7,8 @@ directories:
 
 # Task configuration
 task:
-  goal: "参考柳叶刀最新的养老相关文章，总结出养老行业在app行业的机会点，并给出养老行业在app行业的商业模式，格式为.md文件。"
-  initial_prompt: "你们是一个顶级的app创业团队，从市场调研，和创意发掘，包括找投资人都有一套自己的一套方案，希望先从养老行业开始调研。"
+  goal: "Research elderly care opportunities and create market-research.md with sections: Executive Summary, Target Users, Competitor Analysis, Market Size, User Pain Points, Opportunities。"
+  initial_prompt: "You are a market research specialist for target market analysis and competitive intelligence."
 
 # Safety limits
 safety:

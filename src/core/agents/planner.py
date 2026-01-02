@@ -215,10 +215,10 @@ class PlannerAgent:
             Path to the created trace file, or None if failed
         """
         try:
-            # CRITICAL: Use absolute path from project root to avoid CWD issues
-            # When executor changes to work_dir, relative paths would resolve incorrectly
-            project_root = Path(__file__).resolve().parent.parent.parent
-            trace_dir = project_root / "logs" / "trace"
+            # CRITICAL: Use configured logs directory to avoid CWD issues
+            from src.config import get_config
+            logs_dir = Path(get_config().directories.logs_dir)
+            trace_dir = logs_dir / "trace"
             trace_dir.mkdir(parents=True, exist_ok=True)
 
             # Generate filename

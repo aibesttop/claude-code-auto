@@ -1,0 +1,58 @@
+# Debug Configuration - 调试模式配置
+# 使用此配置可以获得更详细的日志输出
+
+# 日志配置
+logging:
+  level: "DEBUG"  # DEBUG级别会输出所有日志
+  console_output: true
+  log_file: true
+
+# Claude SDK配置
+claude:
+  permission_mode: "bypassPermissions"
+  model: "claude-sonnet-4-5"  # 使用Sonnet (更快,成本更低)
+  timeout_seconds: 300
+
+# 任务配置
+task:
+  goal: "Research elderly care digital health opportunities"
+  initial_prompt: ""  # 空字符串会跳过Team模式,直接使用Leader模式
+
+# Leader模式配置
+leader:
+  enabled: true  # 启用Leader模式
+  max_mission_retries: 2  # 减少重试次数以便调试
+  quality_threshold: 70.0
+
+# 成本控制 (调试模式设置较低限制)
+cost_control:
+  enabled: true
+  max_budget_usd: 5.0  # $5限额用于测试
+  warning_threshold: 3.0
+  auto_stop_on_exceed: true
+
+# 安全配置 (调试时使用更严格的限制)
+safety:
+  max_iterations: 10  # 最多10次迭代
+  iteration_timeout_minutes: 10
+  max_duration_hours: 0.5  # 最多30分钟
+
+# 错误处理
+error_handling:
+  max_retries: 2
+  retry_delay_seconds: 2.0
+  continue_on_error: true
+
+# 工作目录
+directories:
+  work_dir: "debug_workspace"
+  logs_dir: "logs/debug"
+  state_dir: "state/debug"
+
+# 研究配置
+research:
+  enabled: false  # 调试时禁用研究以节省成本
+
+# Persona配置
+persona:
+  enabled: false  # 调试时可以禁用Persona

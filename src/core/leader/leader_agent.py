@@ -244,6 +244,30 @@ class LeaderAgent:
             if result['success']:
                 self.context.completed_missions[mission.id] = result
                 logger.info(f"✅ Mission '{mission.id}' completed")
+
+                # Handle workflow transitions (Tier-3 feature)
+                try:
+                    role = self.role_registry.get_role(role_name)
+                except Exception:
+                    logger.warning(
+                        f"Role '{role_name}' not found during workflow check, using Market-Researcher as fallback"
+                    )
+                    role = self.role_registry.get_role("Market-Researcher")
+
+                if role.workflow:
+                    next_mission = await self._determine_next_workflow_state(role, result, mission)
+                    if next_mission:
+                        logger.info(f"🔄 Workflow transition: {role.name} -> {next_mission}")
+                        # Execute next mission in workflow
+                        next_result = await self._execute_mission(mission, next_mission)
+                        if not next_result['success']:
+                            logger.error(f"❌ Workflow mission '{next_mission}' failed")
+                            return {
+                                "success": False,
+                                "failed_mission": next_mission,
+                                "error": next_result.get('error'),
+                                "metadata": self._get_metadata()
+                            }
             else:
                 logger.error(f"❌ Mission '{mission.id}' failed")
                 return {
@@ -915,3 +939,122 @@ IMPORTANT: Return ONLY the JSON object, no additional text."""
             "intervention_count": self.context.intervention_count,
             "model": self.model
         }
+
+    async def _determine_next_workflow_state(
+        self,
+        role: Role,
+        result: Dict[str, Any],
+        current_mission: SubMission
+    ) -> Optional[str]:
+        """
+        Determine next workflow state based on role's workflow configuration.
+
+        Implements Tier-3 dynamic workflow transitions:
+        - FIXED: Always go to role.workflow.next_state
+        - CONDITIONAL: Check output content for keywords
+        - LLM_DECIDE: Ask LLM to determine next step
+
+        Args:
+            role: Current role with workflow config
+            result: Execution result with outputs
+            current_mission: Current mission being executed
+
+        Returns:
+            Next role name or None if workflow should end
+        """
+        if not role.workflow:
+            return None
+
+        workflow = role.workflow
+
+        # Strategy 1: FIXED transition
+        if workflow.strategy == "fixed":
+            return workflow.next_state
+
+        # Strategy 2: CONDITIONAL transition
+        if workflow.strategy == "conditional":
+            # Check outputs for keywords
+            outputs = result.get("outputs", {})
+
+            for file_path in outputs.values():
+                content = str(file_path).lower()
+
+                # Check each transition rule
+                for keyword, target_state in workflow.transition_rules.items():
+                    if keyword.lower() in content:
+                        logger.info(f"   Found keyword '{keyword}' -> transitioning to {target_state}")
+                        return target_state
+
+            # No keyword matched - use default next_state
+            return workflow.next_state
+
+        # Strategy 3: LLM_DECIDE
+        if workflow.strategy == "llm_decide":
+            # Ask LLM to determine next step
+            prompt = f"""Analyze the following execution result and determine the next workflow step.
+
+Current Role: {role.name}
+Mission Goal: {current_mission.goal}
+
+Execution Outputs:
+{self._format_outputs_for_workflow(result.get('outputs', {}))}
+
+Available Next States:
+- {workflow.next_state or 'End workflow'}
+{chr(10).join(f"- {state}" for state in workflow.transition_rules.values())}
+
+Instructions:
+1. Analyze if the current output is complete and satisfactory
+2. Determine if another role should review or enhance this work
+3. Output ONLY the next role name, or "COMPLETE" if workflow should end
+
+Example outputs: "Architect", "Reviewer", "COMPLETE" """
+
+            try:
+                response, _ = await run_claude_prompt(
+                    prompt,
+                    str(self.work_dir),
+                    model=self.model,
+                    timeout=60,
+                    permission_mode="bypassPermissions",
+                    max_retries=1
+                )
+
+                next_role = response.strip().strip('"').strip("'")
+
+                if next_role.upper() == "COMPLETE" or not next_role:
+                    logger.info("   LLM decided workflow is complete")
+                    return None
+
+                logger.info(f"   LLM decided next state: {next_role}")
+                return next_role
+
+            except Exception as e:
+                logger.error(f"LLM workflow decision failed: {e}")
+                # Fallback to default next_state
+                return workflow.next_state
+
+        # Unknown strategy - use default
+        logger.warning(f"Unknown workflow strategy: {workflow.strategy}")
+        return workflow.next_state
+
+    def _format_outputs_for_workflow(self, outputs: Dict[str, str]) -> str:
+        """
+        Format outputs for workflow decision making.
+
+        Args:
+            outputs: Output files dictionary
+
+        Returns:
+            Formatted string summary
+        """
+        if not outputs:
+            return "No outputs generated."
+
+        lines = []
+        for filename, content in outputs.items():
+            # Show first 500 chars of each file
+            preview = content[:500] + "..." if len(content) > 500 else content
+            lines.append(f"\n## {filename}\n{preview}")
+
+        return "\n".join(lines)

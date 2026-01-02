@@ -20,10 +20,7 @@ mission:
   max_iterations: 12
 
 # --- 2025 增强：多维度角色注入 ---
-recommended_persona: 
-  role: "Principal Software Architect"
-  traits: ["Pragmatic", "Security-first", "Scalability-obsessed"]
-  mental_model: "First Principles Thinking"
+recommended_persona: "Principal Software Architect with 15+ years experience. Traits: Pragmatic, Security-first, Scalability-obsessed. Mental Model: First Principles Thinking + CAP Theorem Awareness."
 
 output_standard:
   required_files:
@@ -58,10 +55,40 @@ tools:
 dependencies:
   - "Market-Researcher"
 
-# --- 新增：反思与博弈 (Critic Loop) ---
-self_correction:
-  trigger: "post_generation"
-  critic_prompt: |
-    "Act as a SRE (Site Reliability Engineer) and a Security Auditor. 
-    Find 3 potential single points of failure in the current architecture. 
-    Refactor 'architecture-design.md' to address these risks."
+# --- Tier-3 Features: Reflection & Workflow ---
+reflection:
+  enabled: true
+  reviewer_role: "SRE-Auditor"
+  aspects: ["scalability", "security", "fault_tolerance", "operational_complexity"]
+  max_retries: 3
+  critic_prompt_template: |
+    Act as a {role} and review this architecture design.
+
+    Review Focus: {aspects}
+
+    # Output to Review
+    {outputs}
+
+    # Instructions
+    1. Find 3 potential single points of failure
+    2. Identify security vulnerabilities
+    3. Check for over-engineering
+    4. Validate trade-off decisions
+
+    Output ONLY JSON:
+    {{
+      "issues_found": [
+        {{"file": "file.md", "issue": "description", "severity": "critical|major|minor", "suggestion": "fix"}}
+      ]
+    }}
+
+workflow:
+  next_state: "AI-Native-Writer"
+  strategy: "conditional"
+  transition_rules:
+    "needs_security_review": "Security-Auditor"
+    "needs_performance_optimization": "Performance-Engineer"
+
+# Quality validation (Tier-3)
+enable_quality_check: true
+quality_threshold: 75.0

@@ -1,0 +1,136 @@
+name: "System-Architect-T3"
+description: "Tier-3 Autonomous System Architect with meta-reasoning, self-reflection, and dynamic workflow capabilities"
+category: "engineering"
+
+# --- Tier-3 Feature: Planning Protocol ---
+planning_protocol:
+  - "Step 1: Ingest requirements and identify conflicts"
+  - "Step 2: Generate candidate architectures with trade-off analysis"
+  - "Step 3: Define interface contracts before component details"
+
+mission:
+  goal: "Design a resilient, scalable, and secure system architecture based on validated requirements"
+
+  success_criteria:
+    - "System Overview aligns with business goals and constraints"
+    - "Architecture diagrams provided in Mermaid.js syntax"
+    - "Security includes Threat Modeling (STRIDE or similar)"
+    - "Infrastructure specifies provider-agnostic vs cloud-native choices"
+    - "Trade-offs documented with rationale for rejected alternatives"
+
+  max_iterations: 12
+
+# --- Tier-3 Feature: Enhanced Persona ---
+recommended_persona: |
+  You are a Principal Software Architect with 15+ years of experience.
+  Traits: Pragmatic, Security-first, Scalability-obsessed
+  Mental Model: First Principles Thinking + CAP Theorem Awareness
+
+  Always consider:
+  1. What happens when this fails? (Failure Mode Analysis)
+  2. What's the cost of complexity vs simplicity? (Trade-off Thinking)
+  3. Can this scale 10x? (Scalability Mindset)
+  4. What are the security implications? (Security by Design)
+
+output_standard:
+  required_files:
+    - "architecture-design.md"
+    - "technical-decisions.log"  # ADR (Architecture Decision Records)
+    - "threat-model.md"
+
+  validation_rules:
+    # Tier-3: Cross-reference validation
+    - type: "cross_reference_check"
+      dependency: "Market-Researcher"
+      rule: "Each technical specification must map to a market requirement"
+
+    # Content validation
+    - type: "content_check"
+      file: "architecture-design.md"
+      must_contain:
+        - "## System Overview"
+        - "## Trade-offs & Decisions"
+        - "## Mermaid Diagrams"
+        - "## Threat Modeling"
+        - "## Failure Mode Analysis"
+
+    # Minimum length (adaptive)
+    - type: "min_length"
+      file: "architecture-design.md"
+      base_chars: 3000
+      adaptive: true
+
+    # No placeholders
+    - type: "no_placeholders"
+      forbidden_patterns:
+        - "\\[TODO\\]"
+        - "TBD"
+        - "placeholder"
+        - "coming soon"
+
+# --- Tier-3 Feature: Reflection/Review Loop ---
+reflection:
+  enabled: true
+  reviewer_role: "SRE-Auditor"  # Switch to SRE persona for review
+  aspects:
+    - "scalability"
+    - "security"
+    - "fault_tolerance"
+    - "operational_complexity"
+  max_retries: 3
+
+  # Custom critic prompt template (optional)
+  critic_prompt_template: |
+    Act as a {role} and review this architecture design.
+
+    Review Focus: {aspects}
+
+    # Output to Review
+    {outputs}
+
+    # Instructions
+    1. Find 3 potential single points of failure
+    2. Identify security vulnerabilities
+    3. Check for over-engineering
+    4. Validate trade-off decisions
+
+    Output ONLY JSON:
+    {{
+      "issues_found": [
+        {{"file": "file.md", "issue": "description", "severity": "critical|major|minor", "suggestion": "fix"}}
+      ]
+    }}
+
+# --- Tier-3 Feature: Workflow State Machine ---
+workflow:
+  next_state: "AI-Native-Writer"  # Default next role
+  strategy: "conditional"  # fixed | conditional | llm_decide
+
+  # Conditional transition rules
+  transition_rules:
+    "needs_security_review": "Security-Auditor"
+    "needs_performance_optimization": "Performance-Engineer"
+    "needs_deployment_strategy": "DevOps-Engineer"
+    "incomplete": "System-Architect-T3"  # Self-loop for refinement
+
+# --- Tool Configuration ---
+tools:
+  - "write_file"
+  - "read_file"
+  - "list_files"
+  - "web_search"  # To research latest framework docs
+
+# Dependencies
+dependencies:
+  - "Market-Researcher"
+
+# Tier-3: Quality validation
+enable_quality_check: true
+quality_threshold: 75.0
+
+# --- Tier-3 Feature: Custom Instructions (Optional) ---
+# You can also put this in roles/prompts/architect_instructions.md
+# base_instructions: |
+#   Additional custom instructions go here...
+#
+# instructions_path: "prompts/architect_instructions.md"

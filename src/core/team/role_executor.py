@@ -2,13 +2,16 @@
 Role Executor
 
 Executes a single role's mission with validation loop.
+
+Enhanced for Tier-3 with reflection/review loops.
 """
 
 from typing import Dict, Any, Optional, List
 from pathlib import Path
-from src.core.team.role_registry import Role, ValidationRule
+from src.core.team.role_registry import Role, ValidationRule, ReviewConfig
 from src.core.agents.executor import ExecutorAgent
 from src.core.agents.planner import PlannerAgent
+from src.core.agents.sdk_client import run_claude_prompt
 from src.core.team.quality_validator import SemanticQualityValidator
 import logging
 import re
@@ -149,11 +152,28 @@ class RoleExecutor:
 
             if validation['passed']:
                 logger.info(f"✅ {self.role.name} mission completed!")
+
+                # Collect outputs
+                outputs = self._collect_outputs()
+
+                # Execute reflection loop if configured (Tier-3 feature)
+                if self.role.reflection and self.role.reflection.enabled:
+                    logger.info("🔍 Executing reflection loop...")
+                    reflection_result = await self._execute_reflection_loop(outputs, context)
+                    outputs = reflection_result["outputs"]
+
+                    logger.info(
+                        f"Reflection completed: {reflection_result['iterations']} iterations, "
+                        f"{len(reflection_result['feedback'])} issues addressed"
+                    )
+
                 return {
                     "success": True,
-                    "outputs": self._collect_outputs(),
+                    "outputs": outputs,
                     "iterations": iteration,
-                    "validation_result": validation
+                    "validation_result": validation,
+                    "validation_passed": validation["passed"],
+                    "validation_errors": validation["errors"],
                 }
             else:
                 logger.warning(f"⚠️ Validation failed: {validation['errors']}")
@@ -175,6 +195,8 @@ class RoleExecutor:
                             "outputs": self._collect_outputs(),
                             "iterations": iteration,
                             "validation_result": validation,
+                            "validation_passed": validation["passed"],
+                            "validation_errors": validation["errors"],
                             "exit_reason": "infinite_loop_detected"
                         }
                 else:
@@ -192,7 +214,9 @@ class RoleExecutor:
             "success": False,
             "outputs": self._collect_outputs(),
             "iterations": iteration,
-            "validation_result": validation
+            "validation_result": validation,
+            "validation_passed": validation["passed"],
+            "validation_errors": validation["errors"],
         }
 
     async def _execute_with_planner(self, context: Dict[str, Any] = None) -> Dict[str, Any]:
@@ -304,7 +328,9 @@ class RoleExecutor:
                     "success": True,
                     "outputs": self._collect_outputs(),
                     "iterations": iteration,
-                    "validation_result": validation
+                    "validation_result": validation,
+                    "validation_passed": validation["passed"],
+                    "validation_errors": validation["errors"],
                 }
             else:
                 logger.info(f"⏳ Validation not yet passed: {validation['errors']}")
@@ -325,6 +351,8 @@ class RoleExecutor:
                             "outputs": self._collect_outputs(),
                             "iterations": iteration,
                             "validation_result": validation,
+                            "validation_passed": validation["passed"],
+                            "validation_errors": validation["errors"],
                             "exit_reason": "infinite_loop_detected"
                         }
                 else:
@@ -344,7 +372,9 @@ class RoleExecutor:
                 "success": True,
                 "outputs": self._collect_outputs(),
                 "iterations": iteration,
-                "validation_result": validation
+                "validation_result": validation,
+                "validation_passed": validation["passed"],
+                "validation_errors": validation["errors"],
             }
 
         # Max iterations reached or planner stopped
@@ -353,7 +383,9 @@ class RoleExecutor:
             "success": False,
             "outputs": self._collect_outputs(),
             "iterations": iteration,
-            "validation_result": validation
+            "validation_result": validation,
+            "validation_passed": validation["passed"],
+            "validation_errors": validation["errors"],
         }
     
     def _build_task(self, mission, context: Dict) -> str:
@@ -715,7 +747,9 @@ The working directory is already set to: {self.work_dir}
         """
         try:
             from pathlib import Path
-            trace_dir = Path("logs/trace")
+            from src.config import get_config
+            logs_dir = Path(get_config().directories.logs_dir)
+            trace_dir = logs_dir / "trace"
             trace_dir.mkdir(parents=True, exist_ok=True)
 
             # Sanitize filename for filesystem
@@ -779,3 +813,230 @@ The working directory is already set to: {self.work_dir}
 
         # Default
         return "medium"
+
+    async def _execute_reflection_loop(
+        self,
+        outputs: Dict[str, str],
+        context: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute Tier-3 reflection/review loop (self-correction).
+
+        After initial output, switch to "critic" mode and review the work.
+        Iteratively refine until quality is acceptable or max retries reached.
+
+        Args:
+            outputs: Initial output files from execution
+            context: Additional context
+
+        Returns:
+            {
+                "refined": bool,
+                "outputs": Dict[str, str],
+                "iterations": int,
+                "feedback": List[str]
+            }
+        """
+        if not self.role.reflection or not self.role.reflection.enabled:
+            return {"refined": False, "outputs": outputs, "iterations": 0, "feedback": []}
+
+        reflection_config = self.role.reflection
+        max_retries = reflection_config.max_retries
+
+        logger.info(f"🔍 Starting reflection loop for {self.role.name}")
+        logger.info(f"   Review aspects: {', '.join(reflection_config.aspects) if reflection_config.aspects else 'general'}")
+        logger.info(f"   Max retries: {max_retries}")
+
+        current_outputs = outputs
+        feedback_history = []
+
+        for iteration in range(1, max_retries + 1):
+            logger.info(f"  Reflection iteration {iteration}/{max_retries}")
+
+            # Compose critic prompt
+            critic_prompt = self._build_critic_prompt(current_outputs, feedback_history)
+
+            # Execute critic review
+            try:
+                review_result, _ = await run_claude_prompt(
+                    critic_prompt,
+                    str(self.work_dir),
+                    model=self.executor.model,
+                    permission_mode=self.executor.permission_mode,
+                    timeout=120,  # Shorter timeout for reviews
+                    max_retries=1
+                )
+
+                # Parse review for issues
+                issues_found = self._parse_review_for_issues(review_result)
+
+                if not issues_found:
+                    logger.info(f"✅ Review passed - no issues found in iteration {iteration}")
+                    return {
+                        "refined": iteration > 1,
+                        "outputs": current_outputs,
+                        "iterations": iteration,
+                        "feedback": feedback_history
+                    }
+
+                logger.info(f"⚠️ Found {len(issues_found)} issues: {[i[:50] for i in issues_found]}")
+                feedback_history.extend(issues_found)
+
+                # Refine based on feedback
+                refinement_task = self._build_refinement_task(current_outputs, issues_found)
+                refined_result = await self.executor.execute_task(refinement_task)
+
+                # Update outputs
+                current_outputs = self._collect_outputs()
+
+            except Exception as e:
+                logger.error(f"Reflection iteration {iteration} failed: {e}")
+                break
+
+        # Max retries reached
+        logger.warning(f"⚠️ Reflection loop completed after {max_retries} iterations")
+        return {
+            "refined": True,
+            "outputs": current_outputs,
+            "iterations": max_retries,
+            "feedback": feedback_history
+        }
+
+    def _build_critic_prompt(
+        self,
+        outputs: Dict[str, str],
+        previous_feedback: List[str] = None
+    ) -> str:
+        """
+        Build critic prompt for reflection loop.
+
+        Args:
+            outputs: Current output files to review
+            previous_feedback: Previous iteration feedback (if any)
+
+        Returns:
+            Critic prompt string
+        """
+        reflection_config = self.role.reflection
+        role_name = reflection_config.reviewer_role or "Self-Reviewer"
+
+        # Build output summary
+        output_summary = []
+        for filename, content in outputs.items():
+            preview = content[:500] + "..." if len(content) > 500 else content
+            output_summary.append(f"\n## {filename}\n{preview}")
+
+        # Build aspects section
+        aspects_section = ""
+        if reflection_config.aspects:
+            aspects_section = f"\nReview Aspects: {', '.join(reflection_config.aspects)}\n"
+
+        # Build previous feedback section
+        feedback_section = ""
+        if previous_feedback:
+            feedback_section = "\n## Previous Feedback (Already Addressed)\n"
+            feedback_section += "\n".join(f"- {fb}" for fb in previous_feedback[-3:])
+            feedback_section += "\n"
+
+        # Use custom template if provided
+        if reflection_config.critic_prompt_template:
+            return reflection_config.critic_prompt_template.format(
+                role=role_name,
+                aspects=', '.join(reflection_config.aspects),
+                outputs='\n'.join(output_summary),
+                previous_feedback=feedback_section
+            )
+
+        # Default critic prompt
+        return f"""Act as a {role_name} and critically review the following output.
+
+# Your Task
+Find flaws, issues, or areas for improvement in the provided work.{aspects_section}
+
+# Output Files to Review
+{"".join(output_summary)}
+{feedback_section}
+# Instructions
+1. Identify specific issues (be precise and actionable)
+2. Prioritize critical issues (security, logic errors, missing requirements)
+3. Ignore minor stylistic issues unless they affect clarity
+4. Output ONLY a JSON object:
+{{
+    "issues_found": [
+        {{
+            "file": "filename.md",
+            "issue": "Description of the problem",
+            "severity": "critical|major|minor",
+            "suggestion": "How to fix it"
+        }}
+    ]
+}}
+
+If NO issues found, return: {{"issues_found": []}}
+
+CRITICAL: Output ONLY the JSON object. No explanatory text."""
+
+    def _parse_review_for_issues(self, review_result: str) -> List[str]:
+        """
+        Parse review result to extract issues.
+
+        Args:
+            review_result: Review output from LLM
+
+        Returns:
+            List of issue descriptions
+        """
+        try:
+            import json
+            data = json.loads(review_result.strip())
+            issues = data.get("issues_found", [])
+
+            if not issues:
+                return []
+
+            # Extract issue descriptions
+            return [
+                f"[{issue.get('severity', 'major').upper()}] {issue.get('file', 'unknown')}: "
+                f"{issue.get('issue', 'no description')}"
+                for issue in issues
+            ]
+
+        except Exception as e:
+            logger.warning(f"Failed to parse review JSON: {e}")
+            # Fallback: try to extract bullet points
+            issues = re.findall(r'[-*]\s*\[(\w+)\]\s*(.+)', review_result)
+            return [f"[{severity}] {desc}" for severity, desc in issues] if issues else []
+
+    def _build_refinement_task(
+        self,
+        outputs: Dict[str, str],
+        issues: List[str]
+    ) -> str:
+        """
+        Build refinement task based on review feedback.
+
+        Args:
+            outputs: Current outputs
+            issues: Issues to fix
+
+        Returns:
+            Refinement task string
+        """
+        issues_text = "\n".join(f"- {issue}" for issue in issues)
+
+        return f"""# Refinement Task
+
+Your previous work has been reviewed and needs refinement. Fix the following issues:
+
+## Issues to Fix
+{issues_text}
+
+## Instructions
+1. Review the issues listed above
+2. Fix each issue in the appropriate file
+3. Ensure all fixes maintain quality and coherence
+4. Use the write_file tool to save updated files
+
+Files to update: {', '.join(outputs.keys())}
+
+Begin refinement now."""
