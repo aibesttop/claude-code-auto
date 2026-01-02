@@ -429,10 +429,14 @@ You should primarily use the following tools for this task:
 
 Working Directory: {self.work_dir}
 IMPORTANT: Use RELATIVE paths for all file operations.
-- Correct: write_file("market-research.md", ...)
-- Correct: write_file("docs/analysis.md", ...)
-- WRONG: write_file("{self.work_dir}/market-research.md", ...)
-- WRONG: write_file("demo_act/market-research.md", ...)
+- Correct ReAct tool call:
+  Action: write_file
+  Action Input: {{"path":"market-research.md","content":"..."}}
+- Correct ReAct tool call:
+  Action: write_file
+  Action Input: {{"path":"docs/analysis.md","content":"..."}}
+- WRONG: Action Input uses absolute path like "{self.work_dir}/market-research.md"
+- WRONG: Action Input uses repo-prefixed path like "demo_act/market-research.md"
 
 The working directory is already set to {self.work_dir}, so just use filenames directly.
 
@@ -444,6 +448,7 @@ Required files (use these exact filenames):
 2. Generate all required files using RELATIVE paths
 3. Ensure outputs meet validation rules
 4. Use the appropriate tools for this task type
+5. Use the ReAct format (Thought/Action/Action Input) and call tools before Final Answer
 """
 
     def _build_planner_task(self, next_task: str, context_str: str) -> str:
@@ -472,6 +477,7 @@ Required files (use these exact filenames if this subtask produces deliverables)
 1. Use tools when needed
 2. If you write outputs, use the required filenames exactly
 3. Do not invent alternate filenames
+4. Use the ReAct format (Thought/Action/Action Input) and call tools before Final Answer
 """
     
     def _build_retry_task(self, errors: list) -> str:

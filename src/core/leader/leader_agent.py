@@ -357,7 +357,8 @@ class LeaderAgent:
                 work_dir=str(self.work_dir),
                 model=self.model,
                 timeout_seconds=self.timeouts.get("executor", 300),
-                permission_mode="bypassPermissions"
+                permission_mode="bypassPermissions",
+                allowed_tools=required_tools if required_tools else None
             )
 
             # 3. Create role executor with resource injection

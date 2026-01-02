@@ -46,6 +46,7 @@ class ExecutorAgent:
         permission_mode: str = "bypassPermissions",
         max_retries: int = 3,
         retry_delay: float = 2.0,
+        allowed_tools: Optional[List[str]] = None,
     ):
         self.work_dir = work_dir
 
@@ -59,6 +60,7 @@ class ExecutorAgent:
         self.permission_mode = permission_mode
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self.allowed_tools = allowed_tools
 
         # Trace tracking
         self.current_task = None
@@ -73,10 +75,26 @@ class ExecutorAgent:
 
     def _get_tool_descriptions(self) -> str:
         schemas = registry.get_all_schemas()
+        allowed = set(self.allowed_tools) if self.allowed_tools else None
+        if allowed:
+            filtered = [s for s in schemas if s["name"] in allowed]
+            if filtered:
+                schemas = filtered
+            else:
+                logger.warning("Allowed tools configured but none matched registry; falling back to all tools.")
         desc = []
         for s in schemas:
             desc.append(f"- {s['name']}: {s['description']}")
-            desc.append(f"  Schema: {json.dumps(s['input_schema'])}")
+            input_schema = s.get("input_schema", {})
+            if input_schema:
+                compact_schema = {
+                    "type": "object",
+                    "properties": input_schema.get("properties", {})
+                }
+                required = input_schema.get("required", [])
+                if required:
+                    compact_schema["required"] = required
+                desc.append(f"  Input JSON: {json.dumps(compact_schema, separators=(',', ':'))}")
         return "\n".join(desc)
 
     def _parse_action(self, text: str) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
@@ -173,7 +191,7 @@ class ExecutorAgent:
             # IMPORTANT: Use forward slashes for JSON compatibility
             work_dir_str = str(work_dir_path).replace('\\', '/')
             work_dir_instruction = f"\n\n## Working Directory\nAll file operations should use paths relative to: {self.work_dir}\nWhen using write_file or read_file, use RELATIVE paths like 'filename.md' or 'subdir/filename.md'\nDO NOT use absolute paths. Always use forward slashes (/) in paths for JSON compatibility."
-            full_system_prompt = f"{persona_prompt}\n\n{base_system_prompt}{work_dir_instruction}"
+            full_system_prompt = f"{base_system_prompt}\n\n{persona_prompt}{work_dir_instruction}"
 
             history = [
                 f"System: {full_system_prompt}",
