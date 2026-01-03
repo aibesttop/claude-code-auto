@@ -588,7 +588,7 @@ class OutputIntegrator:
                     next_line = lines[i + 1]
                     if next_line.strip().startswith('|'):
                         next_cells = [c.strip() for c in next_line.split('|')[1:-1]]
-                        if all(set(c) <= {{'-', ' '}} for c in next_cells):
+                        if all(set(c) <= {'-', ' '} for c in next_cells):
                             is_header = True
 
                 if is_header:

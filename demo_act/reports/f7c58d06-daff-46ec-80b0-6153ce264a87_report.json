@@ -1,0 +1,82 @@
+{
+  "session_id": "f7c58d06-daff-46ec-80b0-6153ce264a87",
+  "goal": "Research elderly care opportunities and create market-research.md with sections: Executive Summary, Target Users, Competitor Analysis, Market Size, User Pain Points, Opportunities。",
+  "summary": {
+    "total_missions": 5,
+    "successful_missions": 5,
+    "failed_missions": 0,
+    "success_rate": 1.0,
+    "total_files_generated": 0,
+    "average_quality_score": 0.0,
+    "total_cost_usd": 0.0,
+    "total_duration_seconds": 0,
+    "timestamp": "2026-01-03T03:15:39.403316Z",
+    "intervention_count": 6,
+    "model": "claude-sonnet-4-5"
+  },
+  "missions": [
+    {
+      "mission_id": "mission_1",
+      "type": "unknown",
+      "goal": "",
+      "role": "Market-Researcher",
+      "success": true,
+      "quality_score": 0.0,
+      "iterations": 1,
+      "files": [],
+      "cost_usd": 0.0,
+      "duration_seconds": 0.0
+    },
+    {
+      "mission_id": "mission_2",
+      "type": "unknown",
+      "goal": "",
+      "role": "Market-Researcher",
+      "success": true,
+      "quality_score": 0.0,
+      "iterations": 1,
+      "files": [],
+      "cost_usd": 0.0,
+      "duration_seconds": 0.0
+    },
+    {
+      "mission_id": "mission_3",
+      "type": "unknown",
+      "goal": "",
+      "role": "Market-Researcher",
+      "success": true,
+      "quality_score": 0.0,
+      "iterations": 1,
+      "files": [],
+      "cost_usd": 0.0,
+      "duration_seconds": 0.0
+    },
+    {
+      "mission_id": "mission_4",
+      "type": "unknown",
+      "goal": "",
+      "role": "Market-Researcher",
+      "success": true,
+      "quality_score": 0.0,
+      "iterations": 1,
+      "files": [],
+      "cost_usd": 0.0,
+      "duration_seconds": 0.0
+    },
+    {
+      "mission_id": "mission_5",
+      "type": "unknown",
+      "goal": "",
+      "role": "AI-Native-Writer",
+      "success": true,
+      "quality_score": 0.0,
+      "iterations": 2,
+      "files": [],
+      "cost_usd": 0.0,
+      "duration_seconds": 0.0
+    }
+  ],
+  "start_time": 1767410139.4033163,
+  "end_time": 1767410139.4033163,
+  "duration_seconds": 0
+}
