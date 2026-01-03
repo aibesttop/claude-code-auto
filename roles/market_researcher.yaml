@@ -3,16 +3,15 @@ description: "Market research specialist for target market analysis and competit
 category: "research"
 
 mission:
-  goal: "Complete in-depth market research and output comprehensive market analysis report"
-  
+  goal: "Perform high-fidelity market intelligence and generate a decision-ready report."
+  # 这里的思维引导能大幅提升质量
+  strategy: "Iterative triangulation: Cross-verify market size from at least two independent sources."
   success_criteria:
-    - "Identify at least 3 target user segments with detailed demographics"
-    - "Analyze at least 5 competitors with strengths/weaknesses"
-    - "Provide specific market size data and growth trends"
-    - "Include user pain points and needs analysis"
-    - "Output market-research.md file with all required sections"
-  
-  max_iterations: 10
+    - "Detailed demographics for 3+ user segments"
+    - "SWOT analysis for top 5 competitors"
+    - "Projected CAGR and TAM/SAM/SOM breakdown"
+    - "Evidence-backed user pain point analysis"
+  max_iterations: 8
 
 output_standard:
   required_files:
@@ -44,6 +43,7 @@ output_standard:
         - "\\[PLACEHOLDER\\]"
         - "\\[TBD\\]"
         - "\\[FILL IN\\]"
+        
 
 recommended_persona: "researcher"
 
@@ -53,3 +53,10 @@ tools:
   - "read_file"
 
 dependencies: []
+
+# Error handling strategies: This is what distinguishes Agents from simple prompts
+error_handling:
+  on_tool_failure: "Retry with alternative search query (rephrase, use synonyms, or broaden/narrow scope)"
+  on_validation_failure: "Re-analyze the missing section and update the file (read existing content first, then add missing parts)"
+  on_search_no_results: "Broaden search query or try different keywords"
+  on_quality_threshold_not_met: "Review and enhance the content based on validation feedback"

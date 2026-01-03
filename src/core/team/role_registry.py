@@ -155,6 +155,12 @@ class Role(BaseModel):
         description="Base system prompt instructions (inline)"
     )
 
+    # Error handling strategies (v4.1)
+    error_handling: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Error handling strategies for different failure scenarios"
+    )
+
 
 class RoleRegistry:
     """
@@ -279,7 +285,17 @@ class RoleRegistry:
             sections.append(f"- Perform up to {role.reflection.max_retries} refinement iterations")
             sections.append("- Address any issues found during review")
 
-        # Section 7: Context (if provided)
+        # Section 7: Error Handling Strategies (v4.1)
+        if role.error_handling:
+            sections.append("\n# Error Handling Strategies")
+            sections.append("When encountering failures, follow these recovery strategies:")
+            for scenario, strategy in role.error_handling.items():
+                # Convert snake_case to readable format
+                scenario_readable = scenario.replace('_', ' ').replace('on ', '').title()
+                sections.append(f"- **{scenario_readable}**: {strategy}")
+            sections.append("\nThese strategies distinguish you from simple scripts - actively recover and adapt!")
+
+        # Section 8: Context (if provided)
         if context:
             sections.append(f"\n# Context")
             sections.append(context)
