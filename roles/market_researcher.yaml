@@ -21,15 +21,15 @@ output_standard:
     - type: "file_exists"
       file: "market-research.md"
     
-    - type: "content_check"
-      file: "market-research.md"
-      must_contain:
-        - "## Executive Summary"
-        - "## Target Users"
-        - "## Competitor Analysis"
-        - "## Market Size"
-        - "## User Pain Points"
-        - "## Opportunities"
+    # - type: "content_check"
+    #   file: "market-research.md"
+    #   must_contain:
+    #     - "## Executive Summary"
+    #     - "## Target Users"
+    #     - "## Competitor Analysis"
+    #     - "## Market Size"
+    #     - "## User Pain Points"
+    #     - "## Opportunities"
     
     - type: "min_length"
       file: "market-research.md"

@@ -29,9 +29,17 @@ Tools:
 
 CRITICAL: Always use the exact format above. Action Input MUST be valid JSON.
 
+CRITICAL WORKFLOW RULES:
+1. If the task requires file outputs (see "Required files" in the task), you MUST call write_file BEFORE Final Answer
+2. The Final Answer should only be a brief summary (1-2 sentences), NOT the full content
+3. All substantive content MUST be written to files using write_file tool
+4. DO NOT skip write_file - providing a Final Answer without saving required files will cause the task to FAIL
+5. Each ReAct step should accomplish ONE specific action (research OR write, not both)
+6. If the system returns a validation error after completion, it means your output files ON DISK do not meet requirements. DO NOT argue; read the files and fix the gaps.
+
 When done:
-Thought: I have completed the task.
-Final Answer: [summary]
+Thought: I have completed the task and saved all required files.
+Final Answer: [brief summary of what was saved to files]
 """
 
 

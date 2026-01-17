@@ -76,8 +76,12 @@ class ValidationRule(BaseModel):
     file: Optional[str] = None
     files: Optional[List[str]] = None
     must_contain: Optional[List[str]] = None
+    patterns: Optional[List[str]] = None
     forbidden_patterns: Optional[List[str]] = None
     min_chars: Optional[int] = None
+    criteria: Optional[List[str]] = None
+    threshold: Optional[float] = None
+    must_reference: Optional[List[str]] = None
     # Adaptive validation (v3.1)
     base_chars: Optional[int] = None  # Base value for adaptive min_length
     adaptive: bool = Field(default=False, description="Enable adaptive adjustment based on complexity")
@@ -265,15 +269,44 @@ class RoleRegistry:
         # Translate validation rules into prompt instructions
         if role.output_standard.validation_rules:
             sections.append("\nValidation Requirements:")
+
+            # Extract must_contain rules for emphasis
+            must_contain_sections = []
             for rule in role.output_standard.validation_rules:
                 if rule.must_contain:
+                    must_contain_sections.extend(rule.must_contain)
                     sections.append(f"- Must contain: {', '.join(rule.must_contain)}")
+                if rule.type == "regex_check" and rule.patterns:
+                    rule_file = rule.file or "unspecified file"
+                    sections.append(f"- Regex check ({rule_file}): {', '.join(rule.patterns)}")
+                if rule.type == "reference_check" and rule.must_reference:
+                    rule_file = rule.file or "unspecified file"
+                    sections.append(f"- Must reference in {rule_file}: {', '.join(rule.must_reference)}")
+                if rule.type == "semantic_judge" and rule.criteria:
+                    rule_file = rule.file or "unspecified file"
+                    threshold = rule.threshold if rule.threshold is not None else 0.7
+                    sections.append(
+                        f"- Semantic check ({rule_file}, threshold {threshold}): {', '.join(rule.criteria)}"
+                    )
                 if rule.forbidden_patterns:
                     sections.append(f"- Must NOT contain: {', '.join(rule.forbidden_patterns)}")
                 if rule.min_chars or rule.base_chars:
                     min_chars = rule.min_chars or rule.base_chars
                     adaptive_note = " (adaptive based on complexity)" if rule.adaptive else ""
                     sections.append(f"- Minimum length: {min_chars} characters{adaptive_note}")
+
+            # CRITICAL: Explicitly warn about exact section titles
+            if must_contain_sections:
+                sections.append("\n⚠️ CRITICAL: Section Title Requirements")
+                sections.append("You MUST use these EXACT section titles (case-sensitive):")
+                for section in must_contain_sections:
+                    sections.append(f"  • {section}")
+                sections.append("\n🚫 DO NOT use variations like:")
+                sections.append("  • 'Market Size and Growth' instead of '## Market Size'")
+                sections.append("  • 'User Segments' instead of '## Target Users'")
+                sections.append("  • 'Market Opportunities' instead of '## Opportunities'")
+                sections.append("\n❌ Using incorrect titles will cause validation failure!")
+                sections.append("✅ Copy the exact titles from the list above to avoid retries.")
 
         # Section 6: Reflection/Review (Tier-3 feature)
         if role.reflection and role.reflection.enabled:
@@ -291,7 +324,13 @@ class RoleRegistry:
             sections.append("When encountering failures, follow these recovery strategies:")
             for scenario, strategy in role.error_handling.items():
                 # Convert snake_case to readable format
-                scenario_readable = scenario.replace('_', ' ').replace('on ', '').title()
+                # e.g., "on_tool_failure" -> "Tool Failure"
+                # Step 1: Replace underscores with spaces
+                step1 = scenario.replace('_', ' ')
+                # Step 2: Remove leading "on " if present
+                step2 = step1[3:] if step1.startswith('on ') else step1
+                # Step 3: Title case
+                scenario_readable = step2.strip().title()
                 sections.append(f"- **{scenario_readable}**: {strategy}")
             sections.append("\nThese strategies distinguish you from simple scripts - actively recover and adapt!")
 

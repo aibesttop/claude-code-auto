@@ -131,3 +131,174 @@ mcp_servers:
       - network_monitoring
       - console_access
     description: "Browser automation and web interaction tools"
+
+  # ============================================
+  # RECOMMENDED ADDITIONS - Popular MCP Servers
+  # ============================================
+
+  # GitHub - GitHub repository operations
+  github:
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-github"
+    env:
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+    capabilities:
+      - create_issue
+      - create_pull_request
+      - read_repository
+      - search_code
+      - manage_issues
+    description: "GitHub repository management and operations"
+
+  # Google Drive - Cloud file storage
+  google_drive:
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-gdrive"
+    env:
+      GOOGLE_CREDENTIALS: "${GOOGLE_CREDENTIALS}"
+    capabilities:
+      - upload_file
+      - download_file
+      - search_files
+      - share_file
+      - list_files
+    description: "Google Drive file storage and management"
+
+  # Google Maps - Location and mapping services
+  google_maps:
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-google-maps"
+    env:
+      GOOGLE_MAPS_API_KEY: "${GOOGLE_MAPS_API_KEY}"
+    capabilities:
+      - geocode
+      - search_places
+      - get_directions
+      - distance_matrix
+      - place_details
+    description: "Google Maps API for location services"
+
+  # Memory - Persistent key-value storage
+  memory:
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-memory"
+    capabilities:
+      - store_memory
+      - retrieve_memory
+      - search_memory
+      - delete_memory
+      - list_memories
+    description: "Persistent in-memory key-value storage for agent state"
+
+  # Puppeteer - Alternative browser automation
+  puppeteer:
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-puppeteer"
+    capabilities:
+      - screenshot
+      - pdf_export
+      - page_scrape
+      - form_fill
+      - click_elements
+    description: "Puppeteer-based browser automation"
+
+  # Exa - AI-powered semantic search
+  exa:
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-exa"
+    env:
+      EXA_API_KEY: "${EXA_API_KEY}"
+    capabilities:
+      - semantic_search
+      - web_search
+      - find_similar
+      - contents_search
+    description: "AI-powered semantic search engine"
+
+  # Slack - Team communication
+  slack:
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-slack"
+    env:
+      SLACK_TOKEN: "${SLACK_TOKEN}"
+    capabilities:
+      - send_message
+      - read_messages
+      - list_channels
+      - upload_file
+    description: "Slack workspace integration for team communication"
+
+  # AWS S3 - Cloud object storage
+  aws_s3:
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-aws"
+    env:
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
+      AWS_REGION: "${AWS_REGION:-us-east-1}"
+    capabilities:
+      - list_buckets
+      - upload_file
+      - download_file
+      - delete_file
+      - list_objects
+    description: "AWS S3 cloud storage operations"
+
+  # Fetch - Simple HTTP requests
+  fetch:
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-fetch"
+    capabilities:
+      - http_get
+      - http_post
+      - fetch_content
+      - api_call
+    description: "Simple HTTP/Fetch API for web requests"
+
+  # E2B - Code execution sandbox
+  e2b:
+    command: npx
+    args:
+      - "-y"
+      - "@e2b/mcp-server"
+    env:
+      E2B_API_KEY: "${E2B_API_KEY}"
+    capabilities:
+      - execute_code
+      - run_sandbox
+      - install_packages
+      - file_operations
+    description: "E2B code execution in isolated sandbox environment"
+
+  # Polar.sh - Product analytics and feedback
+  polar:
+    command: npx
+    args:
+      - "-y"
+      - "@polarmcp/mcp"
+    env:
+      POLAR_API_KEY: "${POLAR_API_KEY}"
+    capabilities:
+      - collect_feedback
+      - create_poll
+      - analyze_responses
+      - embed_widget
+    description: "Polar.sh for product feedback and analytics"

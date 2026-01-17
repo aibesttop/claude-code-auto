@@ -206,7 +206,8 @@ async def run_team_mode(config, executor, work_dir, logger, event_store, session
         orchestrator = TeamOrchestrator(
             roles=roles,
             executor_agent=executor,
-            work_dir=str(work_dir)
+            work_dir=str(work_dir),
+            role_registry=role_registry
         )
         
         result = await orchestrator.execute(config.task.goal)

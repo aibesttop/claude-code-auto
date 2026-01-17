@@ -13,6 +13,7 @@ from src.core.agents.executor import ExecutorAgent
 from src.core.agents.planner import PlannerAgent
 from src.core.agents.sdk_client import run_claude_prompt
 from src.core.team.quality_validator import SemanticQualityValidator
+from src.utils.json_utils import extract_json
 import logging
 import re
 
@@ -38,7 +39,8 @@ class RoleExecutor:
         timeout_seconds: int = 300,
         permission_mode: str = "bypassPermissions",
         skill_prompt: Optional[str] = None,
-        allowed_tools: Optional[List[str]] = None
+        allowed_tools: Optional[List[str]] = None,
+        role_registry = None
     ):
         """
         Initialize the role executor.
@@ -54,6 +56,7 @@ class RoleExecutor:
             permission_mode: Permission mode for planner
             skill_prompt: Additional skill prompt for role enhancement
             allowed_tools: List of allowed tools (None = all tools allowed)
+            role_registry: RoleRegistry instance for getting full prompts (optional)
         """
         self.role = role
         self.executor = executor_agent
@@ -64,6 +67,7 @@ class RoleExecutor:
         self.use_planner = use_planner
         self.skill_prompt = skill_prompt
         self.allowed_tools = allowed_tools
+        self.role_registry = role_registry
 
         # Estimate task complexity for adaptive validation
         self.task_complexity = self._estimate_task_complexity(role.mission.goal)
@@ -389,14 +393,34 @@ class RoleExecutor:
         }
     
     def _build_task(self, mission, context: Dict) -> str:
-        """Build task description for Executor"""
-        context_str = self._format_context(context) if context else "No previous context."
-        criteria_str = "\n".join(f"- {c}" for c in mission.success_criteria)
-        required_files_str = "\n".join(f"- {f}" for f in self.role.output_standard.required_files)
+        """Build task description for Executor using Role Registry's full prompt generator"""
 
-        template_info = ""
-        if self.role.output_standard.template:
-            template_info = f"\n\nYou MUST follow the standard defined in: {self.role.output_standard.template}"
+        # Get the comprehensive prompt from Role Registry (includes validation rules, error handling, etc.)
+        # Fall back to manual building if registry not available
+        if self.role_registry:
+            base_prompt = self.role_registry.get_full_prompt(self.role.name)
+        else:
+            # Fallback: manual prompt building (old behavior)
+            logger.warning("RoleRegistry not provided to RoleExecutor, using manual prompt building")
+            criteria_str = "\n".join(f"- {c}" for c in mission.success_criteria)
+            base_prompt = f"""
+# Mission: {mission.goal}
+
+## Success Criteria
+{criteria_str}
+
+## Mission Strategy
+{mission.strategy}
+
+## Max Iterations
+{mission.max_iterations}
+"""
+
+        # Add context from previous roles
+        context_str = self._format_context(context) if context else "No previous context."
+
+        # Add working directory and file path instructions
+        required_files_str = "\n".join(f"- {f}" for f in self.role.output_standard.required_files)
 
         # Add skill prompt if provided (from ResourceRegistry)
         skill_section = ""
@@ -416,17 +440,12 @@ You should primarily use the following tools for this task:
 {tools_list}
 """
 
-        return f"""
-# Mission: {mission.goal}
-{skill_section}
-## Success Criteria
-{criteria_str}
-
+        # Combine full prompt with execution-specific instructions
+        execution_instructions = f"""
 ## Context from Previous Roles
 {context_str}
 
-## Output Standard{template_info}
-
+## Execution Environment
 Working Directory: {self.work_dir}
 IMPORTANT: Use RELATIVE paths for all file operations.
 - Correct ReAct tool call:
@@ -444,12 +463,34 @@ Required files (use these exact filenames):
 {required_files_str}
 {tools_section}
 ## Instructions
-1. Complete all success criteria
-2. Generate all required files using RELATIVE paths
-3. Ensure outputs meet validation rules
-4. Use the appropriate tools for this task type
-5. Use the ReAct format (Thought/Action/Action Input) and call tools before Final Answer
+
+**CRITICAL WORKFLOW - Follow these steps in order:**
+
+1. **Research Phase** (if applicable):
+   - Use web_search to gather information
+   - Each search should focus on ONE specific aspect
+   - Review results before proceeding
+
+2. **Writing Phase** (MANDATORY before Final Answer):
+   - Call write_file to save your findings to the required files
+   - Use the EXACT section titles specified in Validation Requirements above
+   - Put ALL substantive content in the file, NOT in Final Answer
+
+3. **Final Answer Phase**:
+   - Only AFTER write_file succeeds, provide Final Answer
+   - Final Answer should be a BRIEF summary (1-2 sentences) of what was saved
+   - DO NOT repeat the full content in Final Answer
+
+4. **ERRORS TO AVOID**:
+   - ❌ Providing Final Answer without calling write_file (will cause rejection)
+   - ❌ Putting full content in Final Answer instead of files
+   - ❌ Using wrong section titles (follow Validation Requirements exactly)
+   - ❌ Trying to do everything in one step (break into multiple ReAct steps)
+
+{skill_section}
 """
+
+        return base_prompt + execution_instructions
 
     def _build_planner_task(self, next_task: str, context_str: str) -> str:
         """Build a constrained subtask prompt for planner-driven execution."""
@@ -483,6 +524,29 @@ Required files (use these exact filenames if this subtask produces deliverables)
     def _build_retry_task(self, errors: list) -> str:
         """Build retry task with specific errors to fix"""
         errors_str = "\n".join(f"- {error}" for error in errors)
+
+        files_to_review = []
+        for file in self.role.output_standard.required_files:
+            if any(file in err for err in errors):
+                files_to_review.append(file)
+
+        snapshot_lines = []
+        for file in files_to_review:
+            file_path = self.work_dir / file
+            if file_path.exists():
+                content = file_path.read_text(encoding='utf-8')
+                headers = re.findall(r'^#{1,6}\s+.+$', content, re.MULTILINE)
+                header_preview = "; ".join(headers[:6]) if headers else "none"
+                preview = content[:400].strip()
+                snapshot_lines.append(f"### {file}")
+                snapshot_lines.append(f"Headers: {header_preview}")
+                snapshot_lines.append("Preview:")
+                snapshot_lines.append(preview if preview else "(empty)")
+                snapshot_lines.append("")
+
+        snapshots = "\n".join(snapshot_lines).strip()
+        snapshots_block = f"\n\n## Current File Snapshots\n{snapshots}" if snapshots else ""
+
         return f"""
 # Mission: Fix Validation Errors
 
@@ -491,9 +555,12 @@ Required files (use these exact filenames if this subtask produces deliverables)
 
 ## Instructions
 Fix the above issues and ensure all validation rules pass.
+If validation errors are returned, your output files on disk do NOT meet requirements.
+Do NOT argue or claim completion. Use read_file to inspect the files and fix the gaps.
 Do NOT regenerate everything, just fix the specific issues.
 IMPORTANT: Use RELATIVE paths only (e.g., "filename.md", not "{self.work_dir}/filename.md").
 The working directory is already set to: {self.work_dir}
+{snapshots_block}
 """
     
     async def _validate_outputs(self) -> Dict[str, Any]:
@@ -504,7 +571,11 @@ The working directory is already set to: {self.work_dir}
         format_errors = self._validate_format()
         errors.extend(format_errors)
 
-        # 2. Semantic quality validation (optional, costs tokens)
+        # 2. Semantic rule validation (per validation_rules)
+        semantic_errors = await self._validate_semantic_rules()
+        errors.extend(semantic_errors)
+
+        # 3. Semantic quality validation (optional, costs tokens)
         if self.role.enable_quality_check:
             quality_errors = await self._validate_quality()
             errors.extend(quality_errors)
@@ -527,7 +598,7 @@ The working directory is already set to: {self.work_dir}
                     errors.append(f"Missing required file: {rule.file}")
 
             elif rule_type == "all_files_exist":
-                for file in rule.files:
+                for file in rule.files or []:
                     file_path = self.work_dir / file
                     if not file_path.exists():
                         errors.append(f"Missing required file: {file}")
@@ -536,7 +607,7 @@ The working directory is already set to: {self.work_dir}
                 file_path = self.work_dir / rule.file
                 if file_path.exists():
                     content = file_path.read_text(encoding='utf-8')
-                    for required in rule.must_contain:
+                    for required in rule.must_contain or []:
                         # Flexible pattern matching for markdown headers
                         # Handles variations like "## Header", "##Header", "##  Header"
 
@@ -597,24 +668,53 @@ The working directory is already set to: {self.work_dir}
                             continue  # Found synonym - skip to next requirement
 
                         # Not found - log detailed error
-                        errors.append(f"{rule.file} missing section: {required}")
+                        headers = re.findall(r'^#{1,6}\s+.+$', content, re.MULTILINE)
+                        header_preview = "; ".join(headers[:6]) if headers else "none"
+                        errors.append(
+                            f"{rule.file} missing section: {required} (headers: {header_preview})"
+                        )
                         logger.warning(f"❌ Failed to find '{required}' in {rule.file}")
                         logger.debug(f"Tried pattern: {pattern}")
                         logger.debug(f"File content (first 1000 chars):\n{content[:1000]}")
                         logger.debug(f"File content (headers only):")
                         # Extract and log all markdown headers for debugging
-                        headers = re.findall(r'^#{1,6}\s+.+$', content, re.MULTILINE)
                         for h in headers[:20]:  # Limit to first 20 headers
                             logger.debug(f"  Found header: {h}")
                 else:
                     errors.append(f"Cannot check content, file missing: {rule.file}")
 
+            elif rule_type == "regex_check":
+                if not rule.file:
+                    errors.append("Regex check missing file path")
+                    continue
+                file_path = self.work_dir / rule.file
+                if file_path.exists():
+                    content = file_path.read_text(encoding='utf-8')
+                    for pattern in rule.patterns or []:
+                        if not re.search(pattern, content, re.IGNORECASE | re.MULTILINE):
+                            errors.append(f"{rule.file} missing pattern: {pattern}")
+                else:
+                    errors.append(f"Cannot check regex, file missing: {rule.file}")
+
+            elif rule_type == "reference_check":
+                if not rule.file:
+                    errors.append("Reference check missing file path")
+                    continue
+                file_path = self.work_dir / rule.file
+                if file_path.exists():
+                    content = file_path.read_text(encoding='utf-8')
+                    for reference in rule.must_reference or []:
+                        if not re.search(re.escape(reference), content, re.IGNORECASE):
+                            errors.append(f"{rule.file} missing reference: {reference}")
+                else:
+                    errors.append(f"Cannot check references, file missing: {rule.file}")
+
             elif rule_type == "no_placeholders":
-                for file in rule.files:
+                for file in rule.files or []:
                     file_path = self.work_dir / file
                     if file_path.exists():
                         content = file_path.read_text(encoding='utf-8')
-                        for pattern in rule.forbidden_patterns:
+                        for pattern in rule.forbidden_patterns or []:
                             if re.search(pattern, content):
                                 errors.append(f"{file} contains placeholder: {pattern}")
 
@@ -631,6 +731,103 @@ The working directory is already set to: {self.work_dir}
                         errors.append(
                             f"{rule.file} too short: {len(content)} < {effective_min_chars} chars{complexity_info}"
                         )
+
+        return errors
+
+    async def _validate_semantic_rules(self) -> List[str]:
+        """Validate semantic_judge rules using LLM-based auditing"""
+        errors = []
+        semantic_rules = [
+            rule for rule in self.role.output_standard.validation_rules
+            if rule.type == "semantic_judge"
+        ]
+
+        if not semantic_rules:
+            return errors
+
+        model = "claude-3-haiku-20240307"
+        permission_mode = getattr(self.executor, "permission_mode", "bypassPermissions")
+
+        for rule in semantic_rules:
+            if not rule.file:
+                errors.append("Semantic check missing file path")
+                continue
+            file_path = self.work_dir / rule.file
+            if not file_path.exists():
+                errors.append(f"Cannot run semantic check, file missing: {rule.file}")
+                continue
+
+            criteria = rule.criteria or []
+            if not criteria:
+                errors.append(f"Semantic check has no criteria: {rule.file}")
+                continue
+
+            threshold = rule.threshold if rule.threshold is not None else 0.7
+
+            content = file_path.read_text(encoding='utf-8')
+            content_preview = content[:6000]
+            if len(content) > 6000:
+                content_preview += "\n\n... [content truncated for semantic audit]"
+
+            criteria_list = "\n".join(f"- {c}" for c in criteria)
+
+            prompt = f"""You are a strict content auditor.
+Check whether the content meets the criteria below and score the overall compliance.
+
+CRITERIA:
+{criteria_list}
+
+CONTENT:
+{content_preview}
+
+Return ONLY valid JSON (no extra text):
+{{
+  "score": <number 0-1>,
+  "passed": <true/false>,
+  "missing": ["<missing element 1>", "<missing element 2>"],
+  "reason": "<short reason>"
+}}
+"""
+
+            try:
+                response, _ = await run_claude_prompt(
+                    prompt,
+                    str(self.work_dir),
+                    model=model,
+                    timeout=60,
+                    permission_mode=permission_mode
+                )
+                result = extract_json(response)
+
+                if not isinstance(result, dict):
+                    errors.append(f"{rule.file} semantic check failed: invalid response")
+                    continue
+
+                score = result.get("score")
+                if score is None:
+                    score = result.get("overall_score")
+                if isinstance(score, (int, float)) and score > 1:
+                    score = score / 100.0
+
+                passed = result.get("passed")
+                if passed is None and isinstance(score, (int, float)):
+                    passed = score >= threshold
+
+                missing = result.get("missing") or []
+                if isinstance(missing, str):
+                    missing = [missing]
+                reason = result.get("reason") or "semantic check failed"
+
+                if not passed:
+                    missing_text = f" Missing: {', '.join(missing)}" if missing else ""
+                    score_text = f"{score:.2f}" if isinstance(score, (int, float)) else "n/a"
+                    errors.append(
+                        f"{rule.file} semantic check failed (score {score_text} < {threshold:.2f}): "
+                        f"{reason}{missing_text}"
+                    )
+            except Exception as e:
+                logger.error(f"Semantic validation failed for {rule.file}: {e}")
+                errors.append(f"{rule.file} semantic validation error: {str(e)}")
 
         return errors
 

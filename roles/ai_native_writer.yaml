@@ -39,13 +39,25 @@ output_standard:
         - "docs/06-testing-strategy.md"
         - "docs/07-deployment-guide.md"
     
-    - type: "content_check"
+    - type: "regex_check"
       file: "docs/00-project-context.md"
-      must_contain:
-        - "# Project Context"
-        - "## Problem Statement"
-        - "## Target Users"
-        - "## Success Metrics"
+      patterns:
+        - "^#+\\s+.*Project Context"
+        - "^##\\s+(\\d\\.)?\\s*Problem Statement"
+        - "^##\\s+(\\d\\.)?\\s*Target Users"
+        - "^##\\s+(\\d\\.)?\\s*Success Metrics"
+
+    - type: "semantic_judge"
+      file: "docs/00-project-context.md"
+      criteria:
+        - "Does the Problem Statement clearly describe the system pain points?"
+        - "Does it include at least three measurable success metrics (KPIs)?"
+      threshold: 0.8
+
+    - type: "reference_check"
+      file: "docs/00-project-context.md"
+      must_reference:
+        - "market-research.md"
     
     - type: "content_check"
       file: "docs/01-requirements.md"

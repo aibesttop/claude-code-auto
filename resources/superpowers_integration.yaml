@@ -1,0 +1,229 @@
+# Superpowers Integration Configuration
+# Bridges Superpowers commands with Agentic Skills
+
+integration:
+  enabled: true
+  version: "1.0"
+
+# Command mappings: Superpowers command → Agentic Skill
+commands:
+  # ============================================
+  # CODE & DEVELOPMENT COMMANDS
+  # ============================================
+
+  /commit:
+    skill: technical_writer
+    purpose: "Generate high-quality commit messages following best practices"
+    auto_apply: true  # Automatically use skill when command invoked
+    skill_enhancement:
+      include_logic_flow: true
+      include_reflection: true
+      include_constraints: true
+    output_format: "conventional_commit"  # conventional_commits format
+
+  /review-pr:
+    skill: code_analysis_expert
+    purpose: "Comprehensive PR review with quality standards"
+    auto_apply: true
+    skill_enhancement:
+      include_logic_flow: true
+      include_reflection: true
+    review_aspects:
+      - code_quality
+      - security
+      - performance
+      - test_coverage
+      - documentation
+
+  /test:
+    skill: python_expert
+    purpose: "Generate comprehensive test coverage"
+    auto_apply: true
+    skill_enhancement:
+      include_logic_flow: true
+      include_constraints: true
+    test_targets:
+      - unit_tests
+      - integration_tests
+      - edge_cases
+    coverage_target: 80
+
+  /analyze:
+    skill: code_analysis_expert
+    purpose: "Deep codebase analysis with actionable insights"
+    auto_apply: true
+    analysis_types:
+      - architecture
+      - dependencies
+      - code_smells
+      - security_issues
+
+  # ============================================
+  # PLANNING & DESIGN COMMANDS
+  # ============================================
+
+  /plan:
+    skill: complex_problem_solver
+    purpose: "Break down complex tasks into actionable plans"
+    auto_apply: true
+    skill_enhancement:
+      include_logic_flow: true
+      include_reflection: true
+    planning_depth: "detailed"
+    include_risks: true
+    include_alternatives: true
+
+  /brainstorm:
+    skill: creative_innovator
+    purpose: "Generate diverse creative solutions"
+    auto_apply: true
+    skill_enhancement:
+      include_logic_flow: true
+      include_reflection: true
+    min_ideas: 10
+    converge_top: 3
+
+  /architecture:
+    skill: system_architect
+    purpose: "Design system architecture with trade-off analysis"
+    auto_apply: true
+    skill_enhancement:
+      include_logic_flow: true
+      include_reflection: true
+    include_diagrams: true
+    address_nfr: true  # non-functional requirements
+
+  # ============================================
+  # RESEARCH & DOCUMENTATION COMMANDS
+  # ============================================
+
+  /market-research:
+    skill: market_analyst
+    purpose: "Conduct market research with proper frameworks"
+    auto_apply: true
+    skill_enhancement:
+      include_logic_flow: true
+      include_reflection: true
+      include_constraints: true
+    frameworks:
+      - SWOT
+      - Porter's Five Forces
+      - TAM/SAM/SOM
+    include_citations: true
+
+  /docs:
+    skill: technical_writer
+    purpose: "Create clear, comprehensive technical documentation"
+    auto_apply: true
+    skill_enhancement:
+      include_logic_flow: true
+      include_reflection: true
+      include_constraints: true
+    doc_types:
+      - api_docs
+      - guides
+      - tutorials
+      - architecture_docs
+    readability_target: 60  # Flesch Reading Ease
+
+  /research:
+    skill: market_analyst
+    purpose: "Conduct thorough research on any topic"
+    auto_apply: true
+    skill_enhancement:
+      include_logic_flow: true
+      include_reflection: true
+    research_depth: "comprehensive"
+    include_sources: true
+
+  # ============================================
+  # AUTOMATION COMMANDS
+  # ============================================
+
+  /scrape:
+    skill: web_automation_specialist
+    purpose: "Web scraping with best practices"
+    auto_apply: true
+    skill_enhancement:
+      include_logic_flow: true
+      include_reflection: true
+      include_constraints: true
+    respect_robots_txt: true
+    rate_limit: 1  # requests per second
+
+  /automate:
+    skill: web_automation_specialist
+    purpose: "Browser automation workflows"
+    auto_apply: true
+    skill_enhancement:
+      include_logic_flow: true
+      include_constraints: true
+    tools: ["playwright", "puppeteer"]
+
+# Skill enhancement configuration
+skill_enhancement:
+  # What to include from the agentic skill
+  include_sections:
+    - role
+    - capabilities
+    - logic_flow
+    - constraints
+    - reflection
+    - tool_preference
+
+  # How to combine command context with skill
+  combination_strategy: "merge"  # merge | prepend | append
+
+  # Priority when conflicts arise
+  priority: "skill_over_command"  # skill_over_command | command_over_skill | user_prompt
+
+# Output configuration
+output:
+  # Show which skill was used
+  show_skill_info: true
+
+  # Show the enhanced prompt
+  show_enhanced_prompt: false  # Set to true for debugging
+
+  # Format output
+  format: "markdown"  # markdown | json | plain
+
+  # Include execution trace
+  include_trace: true
+
+# Fallback behavior
+fallback:
+  # What to do if skill mapping not found
+  on_unknown_command: "execute_without_skill"  # execute_without_skill | error | ask_user
+
+  # What to do if skill file not found
+  on_missing_skill: "warn_and_continue"  # warn_and_continue | error | use_fallback_skill
+
+  # Fallback skill to use
+  fallback_skill: "complex_problem_solver"
+
+
+# Example command invocations with context
+examples:
+  /commit:
+    description: "Generate commit message for changes"
+    context_example:
+      changes: "Added user authentication with OAuth2"
+      branch: "feature/oauth2-integration"
+      files: ["src/auth/oauth.py", "src/auth/routes.py"]
+
+  /plan:
+    description: "Create implementation plan for feature"
+    context_example:
+      requirement: "Add real-time notifications using WebSockets"
+      constraints:
+        - "Must use existing WebSocket infrastructure"
+        - "Max 100ms latency"
+        - "Support 10k concurrent users"
+
+  /market-research:
+    description: "Research market opportunity"
+    context_example:
+      query: "Elderly care market in Southeast Asia"
+      market: "Singapore, Malaysia, Thailand"
+      focus: ["market_size", "competitors", "opportunities"]

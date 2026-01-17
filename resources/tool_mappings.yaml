@@ -149,3 +149,123 @@ mappings:
       - web_search
     mcp_servers:
       - filesystem
+
+  # ============================================
+  # NEW MISSION TYPES with added MCP Servers
+  # ============================================
+
+  # Version control missions
+  version_control:
+    required_tools:
+      - write_file
+      - read_file
+    optional_tools:
+      - git_commit
+    mcp_servers:
+      - filesystem
+      - git
+      - github  # GitHub repository operations
+
+  # API integration missions
+  api_integration:
+    required_tools:
+      - write_file
+      - read_file
+    optional_tools:
+      - web_search
+    mcp_servers:
+      - fetch  # HTTP requests
+      - filesystem
+
+  # Data persistence missions
+  data_persistence:
+    required_tools:
+      - write_file
+      - read_file
+    optional_tools:
+      - web_search
+    mcp_servers:
+      - filesystem
+      - memory  # Persistent key-value storage
+      - aws_s3  # Cloud storage (optional)
+
+  # Semantic search missions
+  semantic_search:
+    required_tools:
+      - write_file
+      - read_file
+    optional_tools:
+      - web_search
+    mcp_servers:
+      - exa  # AI-powered semantic search
+      - filesystem
+
+  # Team collaboration missions
+  team_collaboration:
+    required_tools:
+      - write_file
+      - read_file
+    optional_tools:
+      - web_search
+    mcp_servers:
+      - slack  # Team communication
+      - filesystem
+
+  # Cloud storage missions
+  cloud_storage:
+    required_tools:
+      - write_file
+      - read_file
+    optional_tools:
+      - web_search
+    mcp_servers:
+      - google_drive  # Cloud file storage
+      - aws_s3  # AWS S3 storage
+      - filesystem
+
+  # Location-based missions
+  location_services:
+    required_tools:
+      - write_file
+      - read_file
+    optional_tools:
+      - web_search
+    mcp_servers:
+      - google_maps  # Location and mapping
+      - filesystem
+
+  # Code execution missions
+  code_execution:
+    required_tools:
+      - write_file
+      - read_file
+    optional_tools:
+      - web_search
+    mcp_servers:
+      - e2b  # Code execution sandbox
+      - filesystem
+
+  # Product feedback missions
+  product_feedback:
+    required_tools:
+      - write_file
+      - read_file
+    optional_tools:
+      - web_search
+    mcp_servers:
+      - polar  # Product analytics and feedback
+      - filesystem
+
+  # Enhanced browser automation
+  browser_automation_enhanced:
+    required_tools:
+      - write_file
+      - read_file
+    optional_tools:
+      - web_search
+      - run_command
+    mcp_servers:
+      - playwright
+      - puppeteer  # Alternative browser automation
+      - browsermcp
+      - filesystem

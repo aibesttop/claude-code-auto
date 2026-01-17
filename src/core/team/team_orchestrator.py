@@ -16,29 +16,32 @@ logger = logging.getLogger(__name__)
 class TeamOrchestrator:
     """
     Orchestrates linear execution of a team of roles.
-    
+
     Each role completes its mission before the next one starts.
     Context is passed from one role to the next.
     """
-    
+
     def __init__(
         self,
         roles: List[Role],
         executor_agent: ExecutorAgent,
-        work_dir: str
+        work_dir: str,
+        role_registry = None
     ):
         """
         Initialize the team orchestrator.
-        
+
         Args:
             roles: List of roles in execution order
             executor_agent: Existing ExecutorAgent instance
             work_dir: Working directory
+            role_registry: RoleRegistry instance for full prompt generation (optional)
         """
         self.roles = roles
         self.executor = executor_agent
         self.work_dir = work_dir
-        
+        self.role_registry = role_registry
+
         # Context storage (outputs from completed roles)
         self.context: Dict[str, Any] = {}
     
@@ -71,7 +74,8 @@ class TeamOrchestrator:
             role_executor = RoleExecutor(
                 role=role,
                 executor_agent=self.executor,
-                work_dir=self.work_dir
+                work_dir=self.work_dir,
+                role_registry=self.role_registry
             )
             
             # Execute role mission (small loop)
